@@ -184,6 +184,12 @@ ORDER BY create_time ASC;
 
 ---
 
+## 免责声明
+
+本工具仅用于学习和研究目的，用于解密**自己的**微信数据。请遵守相关法律法规，不要用于未经授权的数据访问。
+
+---
+
 <div align="center">
 
 MIT License © [chengmarc](https://github.com/chengmarc)
@@ -191,3 +197,4 @@ MIT License © [chengmarc](https://github.com/chengmarc)
 *数据是你的。读它的权利也是你的。*
 
 </div>
+

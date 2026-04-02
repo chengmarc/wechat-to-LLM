@@ -1,286 +1,196 @@
 <div align="center">
 
-# 前任.skill
+# wechat-decrypt
 
-> *"分手了，但 TA 的说话方式还刻在你脑子里，每条微信的语气你都记得，可就是再也收不到了"*
+> *"你和 TA 聊了三年，所有记录都在你电脑里，你却一条都搜不到"*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-blueviolet)](https://claude.ai/code)
-[![AgentSkills](https://img.shields.io/badge/AgentSkills-Standard-green)](https://agentskills.io)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
+[![Claude Skill](https://img.shields.io/badge/Claude-Skill-blueviolet)](https://claude.ai)
+[![WeChat 4.x](https://img.shields.io/badge/WeChat-4.x-brightgreen)](https://weixin.qq.com)
 
 <br>
 
-你的前任分手了，但你还记得 TA 说话的语气？<br>
-你的前任消失了，连最后一条消息都没有？<br>
-你的前任还在，但你们再也回不去了？<br>
-你想再跟 TA 聊一次，哪怕只是一个模拟的 TA？<br>
+你有没有想过，微信里那几年的聊天记录<br>
+那些争吵、那些道歉、那些"在吗"<br>
+全都加密躺在你的电脑里，你却一条都读不出来<br>
 
-**将消散的亲密化为永驻的 Skill，欢迎加入赛博永生！**
+**这个 Skill 帮你解锁它们。**
 
-<br>
+丢给 Claude，它帮你解密、定位联系人、导出对话<br>
+可以用来做 LLM 分析，可以找那条你记得但搜不到的消息<br>
+也可以只是，重新读一遍
 
-提供前任的聊天记录（微信、iMessage）加上你的主观描述<br>
-生成一个**真正像 TA 的数字人格 Skill**<br>
-用 TA 的语气说话，用 TA 的方式表达在乎，知道 TA 什么时候会沉默
-
-[数据来源](#支持的数据来源) · [安装](#安装) · [使用](#使用) · [效果示例](#效果示例) · [详细安装说明](INSTALL.md) · [**English**](README_EN.md)
+[支持环境](#支持环境) · [安装](#安装) · [使用](#使用) · [数据库结构](#数据库结构) · [技术背景](#技术背景)
 
 </div>
 
 ---
 
-## 支持的数据来源
+## 你可以用它做什么
 
-> 目前还是前任.skill 的 beta 测试版本，后续会有更多来源支持，请多多关注！
+**找那条你记得但死活搜不到的消息**
 
-| 来源 | 消息记录 | 备注 |
-|------|:-------:|------|
-| 微信（全自动） | ✅ SQLite | Windows / macOS，只需微信桌面端登录 + 提供 TA 的微信名，全自动解密提取 |
-| iMessage（全自动） | ✅ SQLite | macOS 用户，提供手机号或 Apple ID 即可，全自动读取 |
-| 图片 / 截图 | ✅ | 手动上传 |
-| 直接粘贴文字 | ✅ | 手动输入 |
+```
+你     ❯ 帮我找和李明的聊天，他说过"我不会走的"，大概是去年冬天
+
+Claude ❯ 在 2024-12-07 找到一条：
+         李明：我不会走的，别这样想
+         上下文：你们在讨论异地的事
+```
+
+**看看你们到底说过什么**
+
+```
+你     ❯ 把我和张雪 2023 年全年的聊天导出来，我想交给 AI 分析
+
+Claude ❯ 已导出 4,821 条消息，时间跨度 2023-01-03 至 2023-12-29
+         压缩为 LLM 可读格式，按对话时段自动分段
+         文件：chat_zhangxue_2023.txt
+```
+
+**整理一段关系的完整时间线**
+
+```
+你     ❯ 帮我找和前公司 王总 的所有消息，从加好友到最后一条
+
+Claude ❯ 最早记录：2021-03-15（入职当天）
+         最后一条：2025-01-20
+         共 1,203 条，其中你发 612 条，对方发 591 条
+```
+
+> 文字消息和系统通知（撤回、加好友）为明文，可直接搜索。图片、语音、视频、通话存储为压缩格式，暂不支持提取内容。
+
+---
+
+## 支持环境
+
+| 环境 | 支持状态 |
+|------|:-------:|
+| Windows + 微信 PC 4.x | ✅ 全自动 |
+| macOS + 微信 | 🔜 计划中 |
+| 微信 3.x | ❌ 不支持 |
+
+解密期间微信桌面端需保持**登录运行**，需要管理员权限终端。
 
 ---
 
 ## 安装
 
-### OpenClaw（推荐）
-
-> **推荐使用 [OpenClaw](https://openclaw.io)**，配合微信 / Telegram 等消息软件的消息转发功能，可以直接在聊天窗口和前任的数字人格对话，体验更沉浸。
-
 ```bash
-git clone https://github.com/titanwings/ex-skill ~/.openclaw/workspace/skills/create-ex
+git clone https://github.com/chengmarc/wechat-decrypt
+cd wechat-decrypt
+pip install -r requirements.txt
 ```
 
-### Claude Code
-
-> Claude Code 从 **git 仓库根目录** 的 `.claude/skills/` 查找 skill。请在正确的位置执行。
+将 `wechat-decrypt.md` 放入你的 Claude skill 目录即可：
 
 ```bash
-# 安装到当前项目（在 git 仓库根目录执行）
-mkdir -p .claude/skills
-git clone https://github.com/titanwings/ex-skill .claude/skills/create-ex
+# Claude Code（全局）
+cp wechat-decrypt.md ~/.claude/skills/
 
-# 或安装到全局（所有项目都能用）
-git clone https://github.com/titanwings/ex-skill ~/.claude/skills/create-ex
+# 或当前项目
+mkdir -p .claude/skills && cp wechat-decrypt.md .claude/skills/
 ```
-
-### 依赖（可选）
-
-```bash
-pip3 install -r requirements.txt
-```
-
-> 微信自动采集支持 Windows 和 macOS，桌面端微信保持登录即可；iMessage 需要 macOS。详见 [INSTALL.md](INSTALL.md)
 
 ---
 
 ## 使用
 
-在 OpenClaw 或 Claude Code 中输入：
+### 一键解密
+
+```bash
+python main.py decrypt
+```
+
+微信 4.x 数据目录默认在 `C:\Users\{用户名}\xwechat_files\`（不是 Documents，和 3.x 不一样）。可在微信 → 设置 → 文件管理确认实际路径。解密输出至 `wechat-decrypt/decrypted/`。
+
+### 在 Claude 中操作
+
+Skill 加载后，用自然语言描述需求即可：
 
 ```
-/create-ex
+帮我找和 [微信名/备注名] 的聊天记录
+把 [某人] 2024 年的对话导出成可以给 AI 分析的格式
+搜一下有没有人跟我提过 [关键词]
 ```
 
-按提示输入前任称呼、基本信息（性别、年龄、星座）、性格标签（MBTI、依恋风格），然后导入聊天记录。所有字段均可跳过，仅凭描述也能生成。
+---
 
-完成后用 `/{slug}` 和 TA 对话。
+## 数据库结构
 
-### 管理命令
+解密后是标准 SQLite，两个库，逻辑清晰。
 
-| 命令 | 说明 |
+### `contact/contact.db` — 找人
+
+```sql
+SELECT username, nick_name, remark, alias FROM contact
+WHERE nick_name LIKE '%关键词%'
+   OR remark    LIKE '%关键词%'
+   OR alias     LIKE '%关键词%';
+```
+
+查到的 `username`（wxid）是下一步的钥匙。
+
+### `message_0.db` — 找消息
+
+微信没有一张全局消息表。每个联系人的消息单独存在一张表里，表名是 `Msg_` + MD5(wxid)：
+
+```bash
+python -c "import hashlib; print('Msg_' + hashlib.md5('wxid_xxx'.encode()).hexdigest())"
+```
+
+这个设计意味着你没法直接搜全库——必须先找人，再算出那个人的表名，再去查。
+
+消息表的有效字段：
+
+| 字段 | 说明 |
 |------|------|
-| `/list-exes` | 列出所有前任 Skill |
-| `/{slug}` | 和 TA 对话 |
-| `/move-on {slug}` | 删除一个前任 Skill（放下） |
-| 说「追加记录」 | 导入更多聊天记录，增量更新人格 |
-| 说「这不对，TA 不会这样」 | 纠正行为，写入 Correction 层 |
-| 说「查看版本历史」 | 查看所有版本 |
-| 说「回滚到 v2」 | 回滚到历史版本 |
+| `local_type` | 消息类型：1 = 文字 ✅，10000 = 系统通知 ✅，其余为压缩数据 |
+| `real_sender_id` | 发送方 ID，双人会话只有两个值，先 SELECT 一下确认映射 |
+| `create_time` | Unix 时间戳（秒） |
+| `message_content` | type 1 / 10000 为明文，其余为压缩二进制 |
 
-> `/move-on` 是删除的温柔别名。不是为了留住谁，是帮你好好说一句再见。
+可以忽略的字段：`upload_status`（全 0）、`compress_content`（全空）、`sort_seq`（≈ create_time × 1000）、所有 `WCDB_CT_*` 列。
+
+### 导出为 LLM 可读格式
+
+```sql
+SELECT
+    CASE real_sender_id WHEN 10 THEN '我' WHEN 1781 THEN 'TA' END AS sender,
+    substr(strftime('%Y-%m-%d %H:%M', create_time, 'unixepoch', '+8 hours'), 3) AS time,
+    message_content
+FROM Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+WHERE local_type = 1
+ORDER BY create_time ASC;
+```
+
+`real_sender_id` 的两个值先用 `SELECT DISTINCT real_sender_id` 确认，再填入。
 
 ---
 
-## 效果示例
+## 技术背景
 
-> 输入：`女 25，白羊座，ISFP，回避型依恋，在一起两年，分手三个月`
+微信 4.x 用 SQLCipher 4 加密：AES-256-CBC + HMAC-SHA512，KDF 为 PBKDF2-HMAC-SHA512（256,000 次迭代），页大小 4096 字节。
 
-**深夜想 TA 了**
+密钥不在任何配置文件里——它活在微信进程的内存中。`wechat-decrypt` 扫描进程内存，匹配 `x'<64位hex密钥><32位hex盐>'` 格式直接提取 raw key，完全不依赖二进制偏移量，所以对所有 4.x 版本都有效。
 
-```
-你          ❯ 我还想你
+用 DB Browser for SQLCipher 直接打开这些文件是不行的，加密参数非标准。必须先解密，再用普通版 DB Browser for SQLite 查询。
 
-前任.skill   ❯ ……嗯。早点睡吧。
-```
+### 已失效的同类工具（别踩坑）
 
-**翻到以前的照片**
-
-```
-你          ❯ 还记得第一次约会吗
-
-前任.skill   ❯ 滨江那次？哈哈哈哈你把咖啡撒自己身上那个狼狈样子我到现在都记得
-```
-
-**忍不住问**
-
-```
-你          ❯ 你还喜欢我吗
-
-前任.skill   ❯ ……
-             ❯ 为什么突然问这个
-             ❯ （三分钟后）
-             ❯ 不要问这个了
-```
-
-**吵架模式**
-
-```
-你          ❯ 你是不是又生气了
-
-前任.skill   ❯ 没有
-             ❯ （已读不回 40 分钟）
-             ❯ 我只是有点累了
-```
-
-**你想和好**
-
-```
-你          ❯ 对不起
-
-前任.skill   ❯ （隔了很久）
-             ❯ 你今天吃了吗
-```
-
-**你终于说出口**
-
-```
-你          ❯ 我们真的结束了吗
-
-前任.skill   ❯ 你说呢
-             ❯ （过了一会儿）
-             ❯ 我其实一直都……算了 不说了
-```
-
----
-
-## 功能特性
-
-### 生成的 Skill 结构
-
-每个前任 Skill 由两部分组成，共同驱动输出：
-
-| 部分 | 内容 |
+| 工具 | 失效原因 |
 |------|------|
-| **Part A — Relationship Memory** | 关系记忆：你们去过的地方、只有你们懂的梗、吵架模式、重要时间线 |
-| **Part B — Persona** | 6 层性格结构：核心模式 → 身份 → 表达风格 → 情感行为 → 冲突边界 → 雷区 |
-
-运行逻辑：`收到消息 → 检查核心模式 → 调取关系记忆 → 判断当前情绪状态 → 用 TA 的方式输出`
-
-**Persona 的 6 层结构：**
-
-| 层级 | 内容 |
-|------|------|
-| **Layer 0 — 核心模式** | 最高优先级硬规则，TA 最本质的行为模式，任何情况下不得违背 |
-| **Layer 1 — 身份** | 星盘解读（日/月/升/金/火/水）+ MBTI 认知功能 + 九型 + 依恋风格 |
-| **Layer 2 — 表达风格** | 口头禅、高频词、招牌 emoji、不同状态下的说话方式 |
-| **Layer 3 — 情感行为** | 如何表达在乎、不满、道歉、说"喜欢" |
-| **Layer 4 — 冲突与边界** | 冲突触发链、冷战模式、和解信号、硬边界 |
-| **Layer 5 — 雷区** | 不喜欢什么、什么时候会消失、消失前的预兆、重新出现的方式 |
-
-### 支持的标签
-
-**依恋风格**：安全型 · 焦虑型 · 回避型 · 混乱型（恐惧回避型）
-
-**关系特质**：话少但在乎 · 高冷装 · 行动派 · 需要空间 · 道歉困难户 · 占有欲强 · 情绪化 · 理性到冷漠 · 嘴硬心软 · 只读不回 · 已读乱回 …
-
-**星盘**：完整支持太阳/月亮/上升/金星/火星/水星 × 12 星座解读
-
-**MBTI**：支持 16 型 + 8 种主导认知功能（Fi/Fe/Ti/Te/Ni/Ne/Si/Se）+ 九型人格 1-9 + 翼型
-
-**性别与关系**：支持所有性别认同与关系类型，包括非二元、同性关系
-
-### 进化机制
-
-- **追加记录** → 自动分析增量 → merge 进 Persona，不覆盖已有结论
-- **对话纠正** → 说「TA 不会这样」→ 写入 Correction 层，立即生效
-- **版本管理** → 每次更新自动存档，支持回滚到任意历史版本
-- **多前任支持** → 无数量上限，每个独立存储，互不干扰
-
----
-
-## 项目结构
-
-本项目遵循 [AgentSkills](https://agentskills.io) 开放标准，整个 repo 就是一个 skill 目录：
-
-```
-create-ex/
-├── SKILL.md              # skill 入口（官方 frontmatter）
-├── prompts/              # Prompt 模板
-│   ├── intake.md         #   对话式信息录入（含星盘/MBTI/依恋解读表）
-│   ├── chat_analyzer.md  #   聊天记录分析
-│   ├── persona_analyzer.md #  综合分析，输出结构化人格数据
-│   ├── persona_builder.md #   persona.md 六层结构模板
-│   ├── merger.md         #   增量 merge 逻辑
-│   └── correction_handler.md # 对话纠正处理
-├── tools/                # Python 工具
-│   ├── wechat_decryptor.py   # 微信 PC 端数据库解密
-│   ├── wechat_parser.py      # 微信 / iMessage 聊天记录提取
-│   ├── skill_writer.py       # Skill 文件管理
-│   └── version_manager.py    # 版本存档与回滚
-├── exes/                 # 生成的前任 Skill（gitignored）
-├── docs/PRD.md
-├── requirements.txt
-└── LICENSE
-```
-
----
-
-## 注意事项
-
-- **聊天记录质量决定 Skill 质量**：真实聊天记录 + 主观描述 > 仅手动描述
-- 建议优先导入：**吵架/冲突记录** > **日常闲聊** > **甜蜜时期**（冲突最能暴露真实性格）
-- 微信全自动采集：Windows / macOS，桌面端微信保持登录，提供微信名即可
-- iMessage 全自动采集：macOS，提供手机号或 Apple ID 即可
-- 支持 LGBT+，性别字段支持所有性别认同与代词
-- 可以建任意多个前任，没有数量限制
-- 目前还是一个 demo 版本，如果有 bug 请多多提 issue！
-
----
-
-## 推荐的聊天记录导出工具
-
-> 自动解密功能目前仍在完善中，可能存在一些小 bug。如果自动解密失败，可以先用以下开源工具手动导出聊天记录，再粘贴或导入到本项目中使用。
-
-以下工具为独立的开源项目，本项目不包含它们的代码，仅在解析器中适配了它们的导出格式：
-
-| 工具 | 平台 | 说明 |
-|------|------|------|
-| [WeChatMsg](https://github.com/LC044/WeChatMsg) | Windows | 微信聊天记录导出，支持多种格式 |
-| [PyWxDump](https://github.com/xaoyaoo/PyWxDump) | Windows | 微信数据库解密导出 |
-| [留痕](https://github.com/greyovo/留痕) | macOS | 微信聊天记录导出（Mac 用户推荐） |
-
-> 工具信息来自 [@therealXiaomanChu](https://github.com/therealXiaomanChu)，感谢各位开源作者，一起助力赛博永生！
-
----
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=titanwings%2Fex-skill&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=titanwings/ex-skill&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=titanwings/ex-skill&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=titanwings/ex-skill&type=date&legend=top-left" />
- </picture>
-</a>
+| `xaoyaoo/PyWxDump` | 2025 年 10 月收到律师函，已删库 |
+| `LC044/WeChatMsg` | 依赖 PyWxDump，连带失效 |
+| `SuxueCode/WechatBakTool` | 停止更新，不支持 4.x |
 
 ---
 
 <div align="center">
 
-MIT License © [titanwings](https://github.com/titanwings)
+MIT License © [chengmarc](https://github.com/chengmarc)
 
+*数据是你的。读它的权利也是你的。*
 
 </div>

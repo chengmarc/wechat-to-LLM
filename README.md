@@ -1,6 +1,6 @@
 <div align="center">
 
-# wechat-decrypt
+# wechat-to-LLM
 
 > *"你和 TA 聊了三年，所有记录都在你电脑里，你却一条都搜不到"*
 

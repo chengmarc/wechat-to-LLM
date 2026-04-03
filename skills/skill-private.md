@@ -100,41 +100,22 @@ sqlite3 ~/Repo/wechat-decrypt/decrypted/contact/contact.db \
 python -c "import hashlib; print('Msg_' + hashlib.md5('wxid_xxxxxxxx'.encode()).hexdigest())"
 ```
 
-### Step 3：确认 real_sender_id 映射
+### Step 3：导出并压缩
 
-**3a. 查自己的 wxid**（contact.db 中 `alias` 或 `nick_name` 对应自己的条目）：
-
-```bash
-sqlite3 ~/Repo/wechat-decrypt/decrypted/contact/contact.db \
-  "SELECT username, nick_name, remark FROM contact WHERE username = 'filehelper' OR remark = '' ORDER BY rowid LIMIT 5;"
-```
-
-> 也可在微信 → 设置 → 我的账号 查看微信号，再用 `alias LIKE '%你的微信号%'` 精确匹配。
-
-**3b. 查消息表的两个 sender_id**：
+微信 4.x 中自己的 `real_sender_id` 固定为 `10`，对方 ID 由脚本自动推断，无需手动确认。
 
 ```bash
-sqlite3 ~/Repo/wechat-decrypt/decrypted/message/message_0.db \
-  "SELECT real_sender_id, COUNT(*) AS cnt FROM {Msg_MD5} WHERE local_type=1 GROUP BY real_sender_id;"
-```
-
-发消息更多的通常是自己（结合 3a 的 wxid 可交叉确认）。记录 `MY_ID` 和 `OTHER_ID`。
-
-### Step 4：导出并压缩
-
-```bash
+# 最简用法（全量导出）
 python scripts/export_private.py \
   --db ~/Repo/wechat-decrypt/decrypted/message/message_0.db \
   --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  --my-id MY_ID \
-  --other-id OTHER_ID \
   > chat_private.txt
 
 # 最近 7 天
-python scripts/export_private.py --db ... --table ... --my-id ... --other-id ... --days 7 > chat_private.txt
+python scripts/export_private.py --db ... --table ... --days 7 > chat_private.txt
 
 # 指定日期范围
-python scripts/export_private.py --db ... --table ... --my-id ... --other-id ... \
+python scripts/export_private.py --db ... --table ... \
   --since 2024-01-01 --until 2025-01-01 > chat_private.txt
 ```
 
@@ -144,8 +125,8 @@ python scripts/export_private.py --db ... --table ... --my-id ... --other-id ...
 |------|:----:|------|
 | `--db` | ✅ | message_0.db 路径 |
 | `--table` | ✅ | 消息表名，如 `Msg_xxxx` |
-| `--my-id` | ✅ | 自己的 real_sender_id（整数） |
-| `--other-id` | ✅ | 对方的 real_sender_id（整数） |
+| `--my-id` | | 自己的 real_sender_id，默认 `10` |
+| `--other-id` | | 对方的 real_sender_id；省略时自动推断 |
 | `--days` | | 最近 N 天；与 `--since` 互斥 |
 | `--since` | | 起始日期 YYYY-MM-DD |
 | `--until` | | 截止日期 YYYY-MM-DD，默认当前时间 |

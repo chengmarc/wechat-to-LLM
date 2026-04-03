@@ -15,28 +15,34 @@
 
 ---
 
-微信聊天记录是加密 SQLite，没有全局搜索，没有导出，每个联系人单独一张表，表名还要手动算。群聊更麻烦——发送者 ID 嵌在消息正文里，不在独立字段。
+微信聊天记录是加密的 SQLite 数据库。即便解密之后，要真正用起来也不简单——每个联系人单独一张表，表名需要手动计算 MD5，群聊的发送者 ID 嵌在消息正文里，查一次要写好几段 SQL。
 
-这两个 Claude Skill 把它接进 Claude，然后你用自然语言说话。
+**wechat-to-LLM 把这一切交给 Claude。**
+
+你只需要说"帮我导出和 XX 的聊天"，剩下的——查联系人、算表名、写 SQL、过滤消息、格式化输出——Claude 全部自动完成。不需要懂 SQL，不需要懂 Python，不需要看文档。
 
 ---
 
-## Pipeline
+## 与 wechat-decrypt 的关系
+
+[ylytdeng/wechat-decrypt](https://github.com/ylytdeng/wechat-decrypt) 负责**解密**：从微信进程内存提取密钥，输出可读的 SQLite 文件。这是必要的前置步骤，本项目不重复造轮子。
+
+**wechat-to-LLM 负责之后的一切**：把解密后的数据库接入 Claude，通过 Skill 实现完全的 agent 化操作。
 
 ```mermaid
 flowchart LR
     WX["微信 PC 4.x\n登录中"]
-    WX -->|"管理员权限\ndecrypt_db.py"| DB
+    WX -->|"decrypt_db.py\n管理员权限"| DB
 
-    subgraph DB ["解密 SQLite"]
+    subgraph DB ["ylytdeng/wechat-decrypt"]
         direction TB
-        C[("contact.db\n联系人 → wxid")]
-        M[("message_0.db\nMsg_ + MD5(wxid)")]
+        C[("contact.db\n联系人")]
+        M[("message_0.db\n消息")]
     end
 
     DB --> SK
 
-    subgraph SK ["Claude Skill"]
+    subgraph SK ["wechat-to-LLM"]
         direction TB
         P["skill-private\n双人会话"]
         G["skill-chatroom\n群聊"]
@@ -102,14 +108,16 @@ cd wechat-decrypt && pip install -r requirements.txt
 python decrypt_db.py
 ```
 
-**Step 2 — 加载 Skill**
+解密完成后，`decrypted/` 目录下会生成 `contact/contact.db` 和 `message/message_0.db`。
+
+**Step 2 — 安装 Skill**
 
 ```bash
 cp skills/skill-private.md ~/.claude/skills/   # 双人会话
 cp skills/skill-chatroom.md ~/.claude/skills/  # 群聊
 ```
 
-加载后直接用自然语言，不用记 SQL。完整操作步骤在 [`skills/`](skills/) 里。
+完成。打开 Claude Code，直接用自然语言说你想做什么。
 
 **环境要求**：Windows + 微信 PC 4.x。暂不支持 macOS 和微信 3.x。
 

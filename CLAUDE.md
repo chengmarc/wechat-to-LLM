@@ -30,7 +30,7 @@ skills/
 
 ## 双人 vs 群聊的关键差异
 
-**双人会话**：`real_sender_id` 可靠，直接用于区分发送方。
+**双人会话**：`real_sender_id` 可靠。自己固定为 `10`（微信 4.x 实测），对方为另一个值，脚本可自动推断。
 
 **群聊**：`real_sender_id` 不可靠，真实发送者 wxid 嵌在 `message_content` 前缀：
 

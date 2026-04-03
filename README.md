@@ -15,10 +15,10 @@
 那些争吵、那些道歉、那些"在吗"<br>
 全都加密躺在你的电脑里，你却一条都读不出来<br>
 
-**这个 Skill 帮你把它们交给 Claude。**
+**这两个 Skill 帮你把它们交给 Claude。**
 
 解密核心由 [ylytdeng/wechat-decrypt](https://github.com/ylytdeng/wechat-decrypt) 提供<br>
-本项目贡献的是：Claude Skill、DB schema 梳理、SQL 查询模板、LLM 导出格式
+本项目贡献的是：Claude Skill（私聊 + 群聊）、DB schema 梳理、SQL 查询模板、LLM 导出格式
 
 [这个项目做了什么](#这个项目做了什么) · [支持环境](#支持环境) · [快速开始](#快速开始) · [数据库结构](#数据库结构)
 
@@ -28,13 +28,15 @@
 
 ## 这个项目做了什么
 
-微信 4.x 的聊天记录是加密的 SQLite，结构也不直观——没有全局消息表，每个联系人单独一张表，表名还需要手动计算。
+微信 4.x 的聊天记录是加密的 SQLite，结构也不直观——没有全局消息表，每个联系人单独一张表，表名还需要手动计算。群聊更麻烦：发送者 ID 嵌在消息内容里，不在独立字段。
 
 本项目在 `ylytdeng/wechat-decrypt` 的解密能力基础上，提供：
 
-- **Claude Skill**：自然语言驱动的完整操作流，从找人到导出一步到位
+- **Claude Skill — 私聊**（`skills/skill-private.md`）：联系人定位、消息查询、双人对话导出
+- **Claude Skill — 群聊**（`skills/skill-chatroom.md`）：成员 ID 提取、发送者映射、群消息导出
+- **导出脚本**（`scripts/`）：私聊/群聊各一个，CLI 参数化，可独立运行
 - **DB schema 文档**：梳理了哪些字段有用、哪些可以忽略、数据类型的实际含义
-- **SQL 查询模板**：联系人定位、时间范围过滤、双人对话导出
+- **SQL 查询模板**：联系人定位、时间范围过滤、双人/群聊导出
 - **LLM 导出格式**：压缩为带时段分隔的紧凑文本，直接可以送入 LLM 分析
 
 ---
@@ -71,6 +73,16 @@ Claude ❯ 最早记录：2021-03-15（入职当天）
          共 1,203 条，其中你发 612 条，对方发 591 条
 ```
 
+**导出群聊总结**
+
+```
+你     ❯ 把这个群最近一周的消息导出来，我想让 AI 做个总结
+
+Claude ❯ 已导出 2026-03-27 至 2026-04-03 的群聊记录
+         共 847 条，涉及 23 位成员
+         文件：chat_2026-03-27_2026-04-03.txt
+```
+
 > 文字消息和系统通知（撤回、加好友）为明文，可直接搜索。图片、语音、视频、通话存储为压缩格式，暂不支持提取内容。
 
 ---
@@ -97,21 +109,24 @@ Claude ❯ 最早记录：2021-03-15（入职当天）
 git clone https://github.com/ylytdeng/wechat-decrypt
 cd wechat-decrypt
 pip install -r requirements.txt
-python main.py decrypt
+python decrypt_db.py
 ```
 
 微信 4.x 数据目录默认在 `C:\Users\{用户名}\xwechat_files\`，与 3.x 不同。可在微信 → 设置 → 文件管理确认实际路径。解密输出至 `wechat-decrypt/decrypted/`。
 
 ### Step 2 — 加载 Claude Skill
 
-将本项目的 `wechat-decrypt.md` 放入你的 Claude skill 目录：
+根据需要加载私聊或群聊 Skill（或两者都加载）：
 
 ```bash
 # Claude Code（全局）
-cp wechat-decrypt.md ~/.claude/skills/
+cp skills/skill-private.md ~/.claude/skills/
+cp skills/skill-chatroom.md ~/.claude/skills/
 
 # 或当前项目
-mkdir -p .claude/skills && cp wechat-decrypt.md .claude/skills/
+mkdir -p .claude/skills
+cp skills/skill-private.md .claude/skills/
+cp skills/skill-chatroom.md .claude/skills/
 ```
 
 加载后用自然语言操作即可，无需记 SQL：
@@ -119,8 +134,22 @@ mkdir -p .claude/skills && cp wechat-decrypt.md .claude/skills/
 ```
 帮我找和 [微信名/备注名] 的聊天记录
 把 [某人] 2024 年的对话导出成可以给 AI 分析的格式
-搜一下有没有人跟我提过 [关键词]
+把 [某群] 最近 7 天的消息导出来
 ```
+
+### Step 3 — 安装脚本依赖
+
+导出脚本仅依赖 Python 标准库，无需额外安装。直接运行：
+
+```bash
+# 双人会话
+python scripts/export_private.py --db PATH --table MSG_TABLE --my-id MY_ID --other-id OTHER_ID > chat_private.txt
+
+# 群聊
+python scripts/export_chatroom.py --db PATH --table MSG_TABLE --id-map id_map.json > chat_chatroom.txt
+```
+
+参数说明见各 Skill 文件或 `python scripts/export_*.py --help`。
 
 ---
 
@@ -130,18 +159,17 @@ mkdir -p .claude/skills && cp wechat-decrypt.md .claude/skills/
 
 ### `contact/contact.db` — 找人
 
-搜联系人：
-
-```sql
-SELECT username, nick_name, remark, alias FROM contact
-WHERE nick_name LIKE '%关键词%'
-   OR remark    LIKE '%关键词%'
-   OR alias     LIKE '%关键词%';
+```bash
+sqlite3 ~/Repo/wechat-decrypt/decrypted/contact/contact.db \
+  "SELECT username, nick_name, remark, alias FROM contact
+   WHERE nick_name LIKE '%关键词%'
+      OR remark    LIKE '%关键词%'
+      OR alias     LIKE '%关键词%';"
 ```
 
-查到的 `username`（wxid）是下一步的钥匙。
+查到的 `username`（wxid）是下一步的钥匙。群聊的 username 格式为 `数字@chatroom`。
 
-### `message_0.db` — 找消息
+### `message/message_0.db` — 找消息
 
 微信没有全局消息表。每个联系人的消息单独一张表，表名是 `Msg_` + MD5(wxid)：
 
@@ -154,23 +182,13 @@ python -c "import hashlib; print('Msg_' + hashlib.md5('wxid_xxx'.encode()).hexdi
 | 字段 | 说明 |
 |------|------|
 | `local_type` | 消息类型：1 = 文字 ✅，10000 = 系统通知 ✅，其余为压缩数据 |
-| `real_sender_id` | 发送方 ID，双人会话只有两个值，先 `SELECT DISTINCT` 确认映射 |
+| `real_sender_id` | 发送方 ID；私聊可用，群聊不可靠（发送者嵌在 `message_content` 前缀中） |
 | `create_time` | Unix 时间戳（秒） |
-| `message_content` | type 1 / 10000 为明文，其余为压缩二进制 |
+| `message_content` | type 1 / 10000 为明文，其余为压缩二进制；群聊格式为 `wxid_xxx:\n正文` |
 
 可忽略字段：`upload_status`（全 0）、`compress_content`（全空）、`sort_seq`（≈ create_time × 1000）、所有 `WCDB_CT_*` 列。
 
-### 导出为 LLM 可读格式
-
-```sql
-SELECT
-    CASE real_sender_id WHEN 10 THEN '我' WHEN 1781 THEN 'TA' END AS sender,
-    substr(strftime('%Y-%m-%d %H:%M', create_time, 'unixepoch', '+8 hours'), 3) AS time,
-    message_content
-FROM Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-WHERE local_type = 1
-ORDER BY create_time ASC;
-```
+完整操作流程见 `skills/` 目录下的对应 Skill 文件。
 
 ---
 
@@ -197,4 +215,3 @@ MIT License © [chengmarc](https://github.com/chengmarc)
 *数据是你的。读它的权利也是你的。*
 
 </div>
-

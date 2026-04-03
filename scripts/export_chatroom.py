@@ -26,8 +26,9 @@ import json
 import re
 import sqlite3
 import sys
-from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+from common import add_time_args, resolve_time_range, log_time_range, compress
 
 
 def build_sender_map(id_map_path: Path) -> dict[str, str]:
@@ -42,19 +43,22 @@ def build_sender_map(id_map_path: Path) -> dict[str, str]:
     return result
 
 
-def parse_content(raw) -> tuple[str | None, str]:
+def parse_content(raw) -> tuple[str | None, str] | None:
     """
-    解析群聊消息格式：wxid_xxx:\n正文
-    返回 (wxid_or_None, 正文)；二进制/引用消息返回 (None, "")
+    解析群聊消息格式：wxid_xxx:\\n正文
+
+    返回值语义：
+      None              → 应跳过（binary / 引用消息 / 含 null byte）
+      (wxid, content)   → 有效消息；wxid 为 None 表示无发送者前缀（系统消息）
     """
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8", errors="replace")
     if not raw:
-        return None, ""
+        return None
 
-    # 含 null byte 或开头大量替换符 → binary 消息（引用/卡片），丢弃
+    # 含 null byte 或开头大量替换符 → binary 消息，跳过
     if "\x00" in raw or raw[:20].count("\ufffd") >= 2:
-        return None, ""
+        return None
 
     if ":\n" in raw:
         prefix, body = raw.split(":\n", 1)
@@ -62,68 +66,61 @@ def parse_content(raw) -> tuple[str | None, str]:
         # wxid 格式：仅含字母、数字、下划线、连字符，长度 1–64
         if re.fullmatch(r"[\w\-]{1,64}", prefix):
             body = body.strip()
-            # body 含 null byte 也丢弃
             if "\x00" in body:
-                return None, ""
+                return None
             return prefix, body
 
-    # 非群聊格式（双人会话或系统消息）：无 wxid，直接返回正文
+    # 无 wxid 前缀（系统消息）
     content = raw.strip()
     if "\x00" in content:
-        return None, ""
+        return None
     return None, content
 
 
-def fetch_messages(db_path: Path, table: str, since_ts: int, until_ts: int) -> list[dict]:
+def fetch_messages(
+    db_path: Path,
+    table: str,
+    since_ts: int | None,
+    until_ts: int | None,
+) -> list[dict]:
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
+
+    conditions = ["local_type = 1"]
+    params = []
+    if since_ts is not None:
+        conditions.append("create_time >= ?")
+        params.append(since_ts)
+    if until_ts is not None:
+        conditions.append("create_time < ?")
+        params.append(until_ts)
+
     cur.execute(
-        f"""
-        SELECT real_sender_id, create_time, message_content
-        FROM {table}
-        WHERE local_type = 1
-          AND create_time >= ?
-          AND create_time <  ?
-        ORDER BY create_time ASC
-        """,
-        (since_ts, until_ts),
+        f"SELECT real_sender_id, create_time, message_content FROM {table}"
+        f" WHERE {' AND '.join(conditions)} ORDER BY create_time ASC",
+        params,
     )
     rows = cur.fetchall()
     conn.close()
     return [{"sender_id": r[0], "ts": r[1], "content": r[2]} for r in rows]
 
 
-def compress(messages: list[dict], sender_map: dict[str, str], threshold: int, tz: timezone) -> str:
-    lines = []
-    last_ts = None
-    skipped = 0
-
-    for msg in messages:
-        ts = msg["ts"]
-        wxid, content = parse_content(msg["content"])
-
-        # 空内容 = binary/引用消息，跳过
+def make_format_fn(sender_map: dict[str, str]):
+    def format_fn(msg) -> tuple[str, str] | None:
+        result = parse_content(msg["content"])
+        if result is None:
+            return None
+        wxid, content = result
         if not content:
-            skipped += 1
-            continue
-
+            return None
         if wxid:
-            display = sender_map.get(wxid)
-            sender = f"【{display if display else wxid}】"
+            display = sender_map.get(wxid, wxid)
+            sender = f"【{display}】"
         else:
-            # real_sender_id 在群聊中不可靠（数字ID），不作为显示名
             sender = "【?】"
+        return sender, content
 
-        if last_ts is None or ts - last_ts > threshold:
-            dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(tz)
-            tag = dt.strftime("%y-%m-%d %H:%M")
-            lines.append(f"\n\n-----------------------\n[{tag}]\n-----------------------")
-
-        last_ts = ts
-        lines.append(f"{sender}：{content}|")
-
-    print(f"过滤 binary/引用消息：{skipped} 条", file=sys.stderr)
-    return "\n".join(lines)
+    return format_fn
 
 
 def parse_args():
@@ -131,51 +128,27 @@ def parse_args():
     parser.add_argument("--db", required=True, help="message_0.db 路径")
     parser.add_argument("--table", required=True, help="消息表名，如 Msg_xxxx")
     parser.add_argument("--id-map", required=True, dest="id_map", help="id_map.json 路径")
-    parser.add_argument("--threshold", type=int, default=3600, help="同一时段阈值（秒），默认 3600")
-    parser.add_argument("--tz", type=int, default=8, help="时区偏移小时数，默认 8")
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--days", type=int, default=1)
-    group.add_argument("--since", help="YYYY-MM-DD")
-    parser.add_argument("--until", help="YYYY-MM-DD")
+    add_time_args(parser, default_days=1)
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    tz = timezone(timedelta(hours=args.tz))
-    now = datetime.now(tz)
-
-    if args.since:
-        since_dt = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=tz)
-    else:
-        since_dt = (now - timedelta(days=args.days)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-
-    until_dt = (
-        datetime.strptime(args.until, "%Y-%m-%d").replace(tzinfo=tz)
-        if args.until
-        else now
-    )
-
-    since_ts = int(since_dt.timestamp())
-    until_ts = int(until_dt.timestamp())
-
-    print(
-        f"查询范围：{since_dt.strftime('%Y-%m-%d %H:%M')} ~ {until_dt.strftime('%Y-%m-%d %H:%M')} (GMT+{args.tz})",
-        file=sys.stderr,
-    )
+    tz, since_ts, until_ts = resolve_time_range(args)
+    log_time_range(tz, since_ts, until_ts, args.tz)
 
     sender_map = build_sender_map(Path(args.id_map))
     messages = fetch_messages(Path(args.db), args.table, since_ts, until_ts)
-
     print(f"共 {len(messages)} 条消息", file=sys.stderr)
 
     if not messages:
         print("该时间段内无消息。", file=sys.stderr)
         return
 
-    print(compress(messages, sender_map, args.threshold, tz))
+    text, skipped = compress(messages, make_format_fn(sender_map), args.threshold, tz)
+    if skipped:
+        print(f"过滤 binary/引用消息：{skipped} 条", file=sys.stderr)
+    print(text)
 
 
 if __name__ == "__main__":

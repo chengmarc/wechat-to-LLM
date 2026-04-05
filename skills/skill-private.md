@@ -19,16 +19,6 @@ decrypted/
     └── message_0.db
 ```
 
-> **注意**：解密使用 `python decrypt_db.py`，而非 `python main.py`。
-> `main.py` 启动的是实时监听模式（WAL 增量 + SSE 推送），不会输出完整的 decrypted/ 目录。
-
-```bash
-cd ~/Repo/wechat-decrypt
-python decrypt_db.py
-```
-
-解密完成后，`decrypted/` 目录下会生成 `contact/contact.db` 和 `message/message_0.db` 等文件。
-
 ---
 
 ## 数据库结构
@@ -81,6 +71,16 @@ python decrypt_db.py
 
 ## 操作流程
 
+### Step 0：更新解密数据（每次必做，不得跳过）
+
+> **注意**：解密使用 `python decrypt_db.py`，而非 `python main.py`。
+> `main.py` 启动的是实时监听模式，不会输出完整的 decrypted/ 目录。
+
+```bash
+cd ~/Repo/wechat-decrypt
+python decrypt_db.py
+```
+
 ### Step 1：定位联系人
 
 ```bash
@@ -104,19 +104,22 @@ python -c "import hashlib; print('Msg_' + hashlib.md5('wxid_xxxxxxxx'.encode()).
 
 微信 4.x 中自己的 `real_sender_id` 固定为 `10`，对方 ID 由脚本自动推断，无需手动确认。
 
+输出文件固定放在 `~/Repo/wechat-to-LLM/output/`，命名为 `chat_{名称}.txt`（`{名称}` 为联系人标识，如 `alice`）。
+
 ```bash
 # 最简用法（全量导出）
+cd ~/Repo/wechat-to-LLM
 python scripts/export_private.py \
   --db ~/Repo/wechat-decrypt/decrypted/message/message_0.db \
   --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  > chat_private.txt
+  > output/chat_{名称}.txt
 
 # 最近 7 天
-python scripts/export_private.py --db ... --table ... --days 7 > chat_private.txt
+python scripts/export_private.py --db ... --table ... --days 7 > output/chat_{名称}.txt
 
 # 指定日期范围
 python scripts/export_private.py --db ... --table ... \
-  --since 2024-01-01 --until 2025-01-01 > chat_private.txt
+  --since 2024-01-01 --until 2025-01-01 > output/chat_{名称}.txt
 ```
 
 **参数说明**：

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sqlite3:*)",
+      "Bash(python:*)",
+      "Bash(grep -E '^[A-Za-z0-9_-]+$')",
+      "Bash(echo \"exit $?\")",
+      "Bash(ls ~/Repo/wechat-to-LLM/id_map*.json)",
+      "Bash(python3:*)",
+      "Bash(echo \"exit: $?\")"
+    ]
+  }
+}

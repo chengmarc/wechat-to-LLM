@@ -10,7 +10,8 @@
       "Bash(echo \"exit: $?\")",
       "Bash(git commit:*)",
       "Bash(sed \"s/,'$/\\)/g\")",
-      "Bash(mkdir -p ~/Repo/wechat-to-LLM/output)"
+      "Bash(mkdir -p ~/Repo/wechat-to-LLM/output)",
+      "Bash(awk:*)"
     ]
   }
 }

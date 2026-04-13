@@ -28,7 +28,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from common import add_time_args, resolve_time_range, log_time_range, compress
+from common import add_time_args, resolve_time_range, log_time_range, compress, decode_content
 
 
 def build_sender_map(id_map_path: Path) -> dict[str, str]:
@@ -43,12 +43,12 @@ def build_sender_map(id_map_path: Path) -> dict[str, str]:
     return result
 
 
-def parse_content(raw) -> tuple[str | None, str] | None:
+def parse_text_content(raw) -> tuple[str | None, str] | None:
     """
-    解析群聊消息格式：wxid_xxx:\\n正文
+    解析 type=1 群聊消息格式：wxid_xxx:\\n正文
 
     返回值语义：
-      None              → 应跳过（binary / 引用消息 / 含 null byte）
+      None              → 应跳过（binary / 含 null byte）
       (wxid, content)   → 有效消息；wxid 为 None 表示无发送者前缀（系统消息）
     """
     if isinstance(raw, bytes):
@@ -86,7 +86,7 @@ def fetch_messages(
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
 
-    conditions = ["local_type = 1"]
+    conditions = []
     params = []
     if since_ts is not None:
         conditions.append("create_time >= ?")
@@ -95,29 +95,49 @@ def fetch_messages(
         conditions.append("create_time < ?")
         params.append(until_ts)
 
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     cur.execute(
-        f"SELECT real_sender_id, create_time, message_content FROM {table}"
-        f" WHERE {' AND '.join(conditions)} ORDER BY create_time ASC",
+        f"SELECT real_sender_id, create_time, message_content, local_type FROM {table}"
+        f"{where} ORDER BY create_time ASC",
         params,
     )
     rows = cur.fetchall()
     conn.close()
-    return [{"sender_id": r[0], "ts": r[1], "content": r[2]} for r in rows]
+    return [
+        {"sender_id": r[0], "ts": r[1], "content": r[2], "local_type": r[3]}
+        for r in rows
+    ]
 
 
 def make_format_fn(sender_map: dict[str, str]):
     def format_fn(msg) -> tuple[str, str] | None:
-        result = parse_content(msg["content"])
-        if result is None:
+        local_type = msg["local_type"]
+
+        # type=1：走原有 wxid 前缀解析逻辑（real_sender_id 在群聊中不可靠）
+        if local_type == 1:
+            result = parse_text_content(msg["content"])
+            if result is None:
+                return None
+            wxid, content = result
+            if not content:
+                return None
+            if wxid:
+                display = sender_map.get(wxid, wxid)
+                sender = f"【{display}】"
+            else:
+                sender = "【?】"
+            return sender, content
+
+        # 其他类型：用 decode_content 解码内容；sender 用 real_sender_id 查表
+        # 注意：群聊 real_sender_id 对非文字消息的可靠性未经完整验证
+        content = decode_content(local_type, msg["content"])
+        if content is None:
             return None
-        wxid, content = result
-        if not content:
-            return None
-        if wxid:
-            display = sender_map.get(wxid, wxid)
-            sender = f"【{display}】"
-        else:
-            sender = "【?】"
+
+        sender_id = msg["sender_id"]
+        # real_sender_id 在群聊中通常是数字，无法直接映射到 wxid；
+        # 此处只能用原始 ID 显示，或标 [?]
+        sender = "【?】"
         return sender, content
 
     return format_fn
@@ -139,7 +159,7 @@ def main():
 
     sender_map = build_sender_map(Path(args.id_map))
     messages = fetch_messages(Path(args.db), args.table, since_ts, until_ts)
-    print(f"共 {len(messages)} 条消息", file=sys.stderr)
+    print(f"共 {len(messages)} 条消息（含所有类型）", file=sys.stderr)
 
     if not messages:
         print("该时间段内无消息。", file=sys.stderr)
@@ -147,7 +167,7 @@ def main():
 
     text, skipped = compress(messages, make_format_fn(sender_map), args.threshold, tz)
     if skipped:
-        print(f"过滤 binary/引用消息：{skipped} 条", file=sys.stderr)
+        print(f"跳过不可解码消息：{skipped} 条", file=sys.stderr)
     print(text)
 
 

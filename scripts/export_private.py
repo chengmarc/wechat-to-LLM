@@ -29,7 +29,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from common import add_time_args, resolve_time_range, log_time_range, compress
+from common import add_time_args, resolve_time_range, log_time_range, compress, decode_content
 
 
 def fetch_messages(
@@ -41,7 +41,7 @@ def fetch_messages(
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
 
-    conditions = ["local_type = 1"]
+    conditions = []
     params = []
     if since_ts is not None:
         conditions.append("create_time >= ?")
@@ -50,14 +50,18 @@ def fetch_messages(
         conditions.append("create_time < ?")
         params.append(until_ts)
 
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     cur.execute(
-        f"SELECT real_sender_id, create_time, message_content FROM {table}"
-        f" WHERE {' AND '.join(conditions)} ORDER BY create_time ASC",
+        f"SELECT real_sender_id, create_time, message_content, local_type FROM {table}"
+        f"{where} ORDER BY create_time ASC",
         params,
     )
     rows = cur.fetchall()
     conn.close()
-    return [{"sender_id": r[0], "ts": r[1], "content": r[2]} for r in rows]
+    return [
+        {"sender_id": r[0], "ts": r[1], "content": r[2], "local_type": r[3]}
+        for r in rows
+    ]
 
 
 def detect_other_id(db_path: Path, table: str, my_id: int) -> int:
@@ -76,7 +80,11 @@ def detect_other_id(db_path: Path, table: str, my_id: int) -> int:
     raise SystemExit(f"错误：找到多个发送者 ID {ids}，请手动指定 --other-id")
 
 
-def make_format_fn(my_id: int, other_id: int):
+def make_format_fn(my_id: int, other_id: int, other_table_hash: str):
+    """
+    other_table_hash: 消息表名去掉 'Msg_' 前缀（即对方 wxid 的 MD5），
+    用于正确标注引用消息中的发送方。
+    """
     def format_fn(msg) -> tuple[str, str] | None:
         sender_id = msg["sender_id"]
         if sender_id == my_id:
@@ -86,13 +94,8 @@ def make_format_fn(my_id: int, other_id: int):
         else:
             return None
 
-        content = msg["content"]
+        content = decode_content(msg["local_type"], msg["content"], other_table_hash)
         if content is None:
-            return None
-        if isinstance(content, bytes):
-            content = content.decode("utf-8", errors="replace")
-        content = content.strip()
-        if not content:
             return None
         return label, content
 
@@ -117,14 +120,19 @@ def main():
     other_id = args.other_id if args.other_id is not None else detect_other_id(Path(args.db), args.table, args.my_id)
     print(f"my_id={args.my_id}  other_id={other_id}", file=sys.stderr)
 
+    # 消息表名去掉 'Msg_' 前缀即为对方 wxid 的 MD5，用于引用消息发送方判断
+    other_table_hash = args.table[4:] if args.table.startswith("Msg_") else ""
+
     messages = fetch_messages(Path(args.db), args.table, since_ts, until_ts)
-    print(f"共 {len(messages)} 条消息", file=sys.stderr)
+    print(f"共 {len(messages)} 条消息（含所有类型）", file=sys.stderr)
 
     if not messages:
         print("该时间段内无消息。", file=sys.stderr)
         return
 
-    text, _ = compress(messages, make_format_fn(args.my_id, other_id), args.threshold, tz)
+    text, skipped = compress(messages, make_format_fn(args.my_id, other_id, other_table_hash), args.threshold, tz)
+    if skipped:
+        print(f"跳过不可解码消息：{skipped} 条", file=sys.stderr)
     print(text)
 
 

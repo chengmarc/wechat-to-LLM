@@ -92,7 +92,7 @@ Claude ❯ 已导出 4,821 条消息，2023-01-03 至 2023-12-29
 Claude ❯ 已导出 2026-03-27 至 2026-04-03，共 847 条，涉及 23 位成员
 ```
 
-> 支持文字消息和系统通知（撤回、加好友）。图片、语音、视频暂不支持。
+> 支持文字、图片、语音、视频、表情、位置、通话、引用回复、链接/卡片分享、系统通知（撤回）。
 
 ---
 
@@ -120,6 +120,8 @@ cp skills/skill-chatroom.md ~/.claude/skills/  # 群聊
 完成。打开 Claude Code，直接用自然语言说你想做什么。
 
 **环境要求**：Windows + 微信 PC 4.x。暂不支持 macOS 和微信 3.x。
+
+**依赖**：Python 3.10+，[zstandard](https://pypi.org/project/zstandard/)（`pip install zstandard`，用于解码引用回复和分享消息）。
 
 ---
 

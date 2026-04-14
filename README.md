@@ -172,6 +172,15 @@ cp skills/summary.md ~/.claude/skills/         # 群聊总结
 
 完成。打开 Claude Code，直接用自然语言说你想做什么。
 
+---
+
+## 目录说明
+
+| 目录 | 用途 |
+|---|---|
+| `backup/` | 存放 `wechat-decrypt` 生成的 `all_keys.json`（密钥备份）。**`all_keys.json` 包含数据库加密密钥，已加入 `.gitignore`，不会上传。** |
+| `output/` | 导出脚本的默认输出目录，存放生成的聊天记录文本文件。内容已加入 `.gitignore`，不会上传。 |
+
 **环境要求**：Windows + 微信 PC 4.x。wechat-decrypt 同时支持 Linux，暂不支持 macOS 和微信 3.x。
 
 **依赖**：Python 3.10+，[zstandard](https://pypi.org/project/zstandard/)（`pip install zstandard`，用于解码引用回复和分享消息）。

@@ -1,4 +1,4 @@
 .claude/
-backup/
+backup/all_keys.json
 output/
 __pycache__/

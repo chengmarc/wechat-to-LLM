@@ -107,7 +107,7 @@ cp skills/*.md ~/.claude/skills/
 
 **环境要求**：Windows + 微信 PC 4.x，Linux 未测试，暂不支持 macOS。
 
-**依赖**：Python 3.10+，[zstandard](https://pypi.org/project/zstandard/)（`pip install zstandard`）。
+**依赖**：Python 3.10+，[zstandard](https://pypi.org/project/zstandard/)（`pip install zstandard`），sqlite3（标准库，精简 Linux 镜像需额外安装 `python3-sqlite3`）。
 
 ## 免责声明
 

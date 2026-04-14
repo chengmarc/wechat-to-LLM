@@ -30,29 +30,26 @@ from pathlib import Path
 
 from common import (
     add_time_args, resolve_time_range, log_time_range,
-    fetch_messages_multi, detect_sender_ids_multi,
+    fetch_messages_multi, detect_sender_ids_multi, build_sender_label_map,
     compress, decode_content,
 )
 
 
-def make_format_fn(my_id: int, other_id: int, other_table_hash: str):
+def make_format_fn(label_map: dict[int, str], other_table_hash: str):
     """
+    label_map: {sender_id: '用户'/'对方'}，由 build_sender_label_map 按库分别推断。
     other_table_hash: 消息表名去掉 'Msg_' 前缀（即对方 wxid 的 MD5），
     用于正确标注引用消息中的发送方。
     """
     def format_fn(msg) -> tuple[str, str] | None:
-        sender_id = msg["sender_id"]
-        if sender_id == my_id:
-            label = "用户"
-        elif sender_id == other_id:
-            label = "对方"
-        else:
+        label = label_map.get(msg["sender_id"])
+        if label is None:
             return None
 
         content = decode_content(msg["local_type"], msg["content"], other_table_hash)
         if content is None:
             return None
-        return label, content
+        return f"【{label}】", content
 
     return format_fn
 
@@ -74,15 +71,19 @@ def main():
 
     db_paths = [Path(p) for p in args.db]
 
-    if args.my_id is not None and args.other_id is not None:
-        my_id, other_id = args.my_id, args.other_id
-    else:
-        my_id, other_id = detect_sender_ids_multi(db_paths, args.table)
+    label_map = build_sender_label_map(db_paths, args.table)
+    # 手动覆盖优先
+    if args.my_id is not None or args.other_id is not None:
+        try:
+            my_id, other_id = detect_sender_ids_multi(db_paths, args.table)
+        except SystemExit:
+            my_id, other_id = args.my_id, args.other_id
         if args.my_id is not None:
             my_id = args.my_id
         if args.other_id is not None:
             other_id = args.other_id
-    print(f"--my-id={my_id}  --other-id={other_id}", file=sys.stderr)
+        label_map = {my_id: "用户", other_id: "对方"}
+    print(f"sender label map: {label_map}", file=sys.stderr)
 
     # 消息表名去掉 'Msg_' 前缀即为对方 wxid 的 MD5，用于引用消息发送方判断
     other_table_hash = args.table[4:] if args.table.startswith("Msg_") else ""
@@ -94,7 +95,7 @@ def main():
         print("该时间段内无消息。", file=sys.stderr)
         return
 
-    text, skipped = compress(messages, make_format_fn(my_id, other_id, other_table_hash), args.threshold, tz)
+    text, skipped = compress(messages, make_format_fn(label_map, other_table_hash), args.threshold, tz)
     if skipped:
         print(f"跳过不可解码消息：{skipped} 条", file=sys.stderr)
     print(text)

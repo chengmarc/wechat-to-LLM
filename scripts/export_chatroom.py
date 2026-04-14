@@ -63,7 +63,8 @@ def auto_build_id_map(db_path: Path, table: str, contact_db_path: Path, id_map_p
     raw_ids = [r[0] for r in cur.fetchall() if r[0]]
     conn.close()
 
-    wxids = [w for w in raw_ids if re.fullmatch(r"[\w\-]{1,64}", w)]
+    decoded_ids = [w.decode("utf-8", errors="replace") if isinstance(w, bytes) else w for w in raw_ids]
+    wxids = [w for w in decoded_ids if re.fullmatch(r"[\w\-]{1,64}", w)]
     if not wxids:
         print("警告：未找到任何 wxid 前缀，id_map 将为空", file=sys.stderr)
         entries = []

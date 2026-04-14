@@ -24,16 +24,11 @@ skills/
 
 ### appmsg 扩展类型（`local_type % 2³² == 49`）
 
-编码规律：`local_type = appmsg_inner_type × 2³² + 49`。内容为 **zstd 压缩的 appmsg XML**，`<appmsg><type>N</type>` 决定实际类型：
-
-| appmsg inner type | 类型 | local_type 示例 | 导出输出 |
-|---|---|---|---|
-| 4 | 外链/视频分享（B站等） | 17179869233 | `[分享] {title} {url}` |
-| 5 | 小程序/图文分享（小红书等）| 21474836529 | `[分享] {title} {url}` |
-| 57 | 引用回复 | 244813135921 | `[引用] 「{发送方}：{被引用内容}」 {回复正文}` |
-| 其他 | 卡片/小程序等 | — | `[分享] {title}`（无 URL 时） |
+编码规律：`local_type = appmsg_inner_type × 2³² + 49`。内容为 **zstd 压缩的 appmsg XML**，`<appmsg><type>N</type>` 决定实际类型。**类型→输出映射见 `skills/common.md`**。
 
 zstd 魔数：`\x28\xb5\x2f\xfd`（前4字节）。解压依赖 `zstandard` 库；未安装时显示 `[需安装 zstandard 库以读取此消息]`。
+
+**群聊 appmsg 的 wxid 前缀**：群聊中 appmsg 解压后内容开头有 `wxid_xxx:\n` 前缀，私聊无。解码前需先找 `<?xml` 起始位置截断，否则 XML 解析失败。实现见 `decode_content()` 中的 `xml_start = xml_str.find("<?xml")` 处理。
 
 #### 引用消息发送方判断（`other_table_hash`）
 
@@ -99,4 +94,4 @@ cp skills/*.md ~/.claude/skills/
 
 ## 依赖
 
-Python 3.10+，[zstandard](https://pypi.org/project/zstandard/)（`pip install zstandard`）。
+Python 3.10+，[zstandard](https://pypi.org/project/zstandard/)（`pip install zstandard`），sqlite3（标准库，精简 Linux 镜像需额外安装 `python3-sqlite3`）。

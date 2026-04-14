@@ -1,4 +1,4 @@
-# wechat-to-LLM
+# 微信.skill
 
 微信 4.x 聊天记录解密导出工具，输出 LLM 可读压缩文本。解密能力来自 `ylytdeng/wechat-decrypt`，本项目提供 Claude Skill、导出脚本和 DB schema 文档。
 
@@ -7,11 +7,15 @@
 ```
 scripts/
   common.py            # 共用工具：时间参数解析、进度日志、compress()、decode_content()
+  export_contacts.py     # 按消息量扫描重要联系人，支持多消息库
   export_private.py    # 双人会话导出脚本
   export_chatroom.py   # 群聊导出脚本
 skills/
-  skill-private.md     # Claude Skill：双人会话
-  skill-chatroom.md    # Claude Skill：群聊
+  common.md            # Claude Skill：公共知识库（DB schema、Step 0、公共参数）
+  export-contacts.md   # Claude Skill：按消息量扫描重要联系人（依赖 common）
+  export-private.md    # Claude Skill：双人会话（依赖 common）
+  export-chatroom.md   # Claude Skill：群聊（依赖 common）
+  summary.md           # Claude Skill：群聊总结模板
 ```
 
 `common.py` 提供：`add_time_args` / `resolve_time_range` / `log_time_range` / `compress` / `decode_content`。
@@ -81,7 +85,7 @@ hashlib.md5(fromusr.encode()).hexdigest() == table[4:]
 
 ## 双人 vs 群聊的关键差异
 
-**双人会话**：`real_sender_id` 可靠。自己固定为 `10`（微信 4.x 实测），对方为另一个值，脚本可自动推断。
+**双人会话**：`real_sender_id` 可靠。脚本自动推断：扫描 type=1 消息的所有 distinct sender_id，两者中**较小的为 my_id，较大的为 other_id**（各库实测均符合此规律）。若自动推断失败（例如某库只有单方消息），用 `--my-id` / `--other-id` 手动覆盖。
 
 **群聊**：type=1 消息的 `real_sender_id` 不可靠，真实发送者 wxid 嵌在 `message_content` 前缀：
 
@@ -93,13 +97,20 @@ wxid_xxx:\n正文内容
 
 群聊非文字消息（图片、引用等）无 wxid 前缀，`real_sender_id` 可靠性未经完整验证，导出时发送方标注为 `【?】`。
 
-## 导出脚本约定
+## 脚本约定
 
 - 进度信息 → `stderr`，正文 → `stdout`，重定向互不干扰
 - 时段分隔：相邻消息间隔超过 `--threshold`（默认 3600 秒）则插入分隔线
 - 默认时区 GMT+8，可用 `--tz` 调整
 - 时间过滤三选一：`--days N` / `--since YYYY-MM-DD` / 不填（私聊全量，群聊默认 1 天）
 - `fetch_messages` 拉取全部 local_type，不做前置过滤；类型过滤在 `decode_content()` 内处理
+
+### export_contacts.py
+
+- `--msg-dbs` 接受多个路径（空格分隔），合并各库计数
+- `--msg-dbs` 建议传入所有已解密的库（message_0.db、message_1.db……编号不设上限），同一联系人的消息可能分散在多个库中；message_0 为最新，编号越大越早
+- 算法：扫描各 DB 所有 `Msg_*` 表 → 合并行计数 → 反查 contact.db（MD5 比对）→ 过滤阈值 → 降序输出
+- 默认只输出双人会话；`--include-chatrooms` 加入群聊
 
 ## 输出格式
 
@@ -116,8 +127,11 @@ wxid_xxx:\n正文内容
 ## Skills 安装
 
 ```bash
-cp skills/skill-private.md ~/.claude/skills/
-cp skills/skill-chatroom.md ~/.claude/skills/
+cp skills/common.md ~/.claude/skills/
+cp skills/export-contacts.md ~/.claude/skills/
+cp skills/export-private.md ~/.claude/skills/
+cp skills/export-chatroom.md ~/.claude/skills/
+cp skills/summary.md ~/.claude/skills/
 ```
 
 ## 依赖

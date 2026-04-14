@@ -1,5 +1,5 @@
 ---
-name: summary-template
+name: summary
 description: 用于将群聊记录转化为规避微信折叠、无列表符号、Emoji标题的精简总结。
 ---
 

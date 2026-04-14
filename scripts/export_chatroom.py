@@ -24,11 +24,10 @@
 import argparse
 import json
 import re
-import sqlite3
 import sys
 from pathlib import Path
 
-from common import add_time_args, resolve_time_range, log_time_range, compress, decode_content
+from common import add_time_args, resolve_time_range, log_time_range, fetch_messages, compress, decode_content
 
 
 def build_sender_map(id_map_path: Path) -> dict[str, str]:
@@ -77,38 +76,6 @@ def parse_text_content(raw) -> tuple[str | None, str] | None:
     return None, content
 
 
-def fetch_messages(
-    db_path: Path,
-    table: str,
-    since_ts: int | None,
-    until_ts: int | None,
-) -> list[dict]:
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-
-    conditions = []
-    params = []
-    if since_ts is not None:
-        conditions.append("create_time >= ?")
-        params.append(since_ts)
-    if until_ts is not None:
-        conditions.append("create_time < ?")
-        params.append(until_ts)
-
-    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-    cur.execute(
-        f"SELECT real_sender_id, create_time, message_content, local_type FROM {table}"
-        f"{where} ORDER BY create_time ASC",
-        params,
-    )
-    rows = cur.fetchall()
-    conn.close()
-    return [
-        {"sender_id": r[0], "ts": r[1], "content": r[2], "local_type": r[3]}
-        for r in rows
-    ]
-
-
 def make_format_fn(sender_map: dict[str, str]):
     def format_fn(msg) -> tuple[str, str] | None:
         local_type = msg["local_type"]
@@ -155,7 +122,7 @@ def parse_args():
 def main():
     args = parse_args()
     tz, since_ts, until_ts = resolve_time_range(args)
-    log_time_range(tz, since_ts, until_ts, args.tz)
+    log_time_range(tz, since_ts, until_ts)
 
     sender_map = build_sender_map(Path(args.id_map))
     messages = fetch_messages(Path(args.db), args.table, since_ts, until_ts)

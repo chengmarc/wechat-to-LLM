@@ -51,7 +51,7 @@ hashlib.md5(fromusr.encode()).hexdigest() == table[4:]
 
 ## 双人 vs 群聊的关键差异
 
-**双人会话**：`real_sender_id` 可靠。脚本自动推断：扫描 type=1 消息的所有 distinct sender_id，两者中**较小的为 my_id，较大的为 other_id**（各库实测均符合此规律）。若自动推断失败（例如某库只有单方消息），用 `--my-id` / `--other-id` 手动覆盖。
+**双人会话**：`real_sender_id` 可靠。发送方映射通过 `--sender-map sender_map.json` 管理：文件不存在时脚本自动按库推断（每库取两个 distinct sender_id，较小的为 my_id）并写出 JSON 后退出；用户核对/修正后重新运行导出。JSON 每条含 `_samples` 字段（各 sender_id 的采样消息），便于人工判断。
 
 **群聊**：type=1 消息的 `real_sender_id` 不可靠，真实发送者 wxid 嵌在 `message_content` 前缀：
 
@@ -74,7 +74,8 @@ wxid_xxx:\n正文内容
 
 ### export_private.py
 
-- `--db` 支持传多个路径（`nargs="+"`），内部 `fetch_messages_multi` 跨库拉取后按 `create_time` 排序合并；`detect_sender_ids_multi` 跨库聚合 distinct sender_id 推断双方
+- `--db` 支持传多个路径（`nargs="+"`），内部 `fetch_messages_multi` 跨库拉取后按 `create_time` 排序合并
+- `--sender-map` 必填，指向 sender_map.json；文件不存在时自动生成（含 `_samples`）并退出供核对，存在时直接读取；每条消息按自身所在库查对应映射，避免跨库 ID 冲突
 
 ### export_contacts.py
 

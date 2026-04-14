@@ -128,4 +128,10 @@ for db in sorted(glob.glob(pattern)):
 | `--threshold` | | 时段阈值（秒），默认 3600 |
 | `--tz` | | 时区偏移小时数，默认 8 |
 
+export_private.py 专有参数：
+
+| 参数 | 必填 | 说明 |
+|------|:----:|------|
+| `--sender-map` | ✅ | sender_map.json 路径；不存在时自动推断并写出后退出，存在时直接读取 |
+
 进度信息输出到 stderr，正文输出到 stdout，重定向互不干扰。

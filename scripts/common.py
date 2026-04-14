@@ -337,51 +337,10 @@ def fetch_messages(
     rows = cur.fetchall()
     conn.close()
     return [
-        {"sender_id": r[0], "ts": r[1], "content": r[2], "local_type": r[3]}
+        {"sender_id": r[0], "ts": r[1], "content": r[2], "local_type": r[3], "db_path": db_path}
         for r in rows
     ]
 
-
-def detect_sender_ids_multi(db_paths: list[Path], table: str) -> tuple[int, int]:
-    """
-    跨多个 DB 收集 distinct real_sender_id，推断双人会话的 (my_id, other_id)。
-    规律：两个 ID 中较小的为 my_id，较大的为 other_id。
-    """
-    all_ids: set[int] = set()
-    for db_path in db_paths:
-        conn = sqlite3.connect(db_path)
-        if _table_exists(conn, table):
-            cur = conn.cursor()
-            cur.execute(f"SELECT DISTINCT real_sender_id FROM {table} WHERE local_type = 1")
-            all_ids.update(r[0] for r in cur.fetchall())
-        conn.close()
-    ids = sorted(all_ids)
-    if len(ids) == 2:
-        return ids[0], ids[1]
-    raise SystemExit(
-        f"错误：跨所有库共找到 {len(ids)} 个发送者 ID {ids}，"
-        f"无法自动推断，请手动指定 --my-id / --other-id"
-    )
-
-
-def build_sender_label_map(db_paths: list[Path], table: str) -> dict[int, str]:
-    """
-    按库分别推断 sender_id 标签，构建全局 {sender_id: label} 映射。
-    每个库内独立取两个 ID，较小的为 '用户'，较大的为 '对方'。
-    适用于跨库 sender_id 不一致的情况。
-    """
-    label_map: dict[int, str] = {}
-    for db_path in db_paths:
-        conn = sqlite3.connect(db_path)
-        if _table_exists(conn, table):
-            cur = conn.cursor()
-            cur.execute(f"SELECT DISTINCT real_sender_id FROM {table} WHERE local_type = 1")
-            ids = sorted(r[0] for r in cur.fetchall())
-            if len(ids) == 2:
-                label_map[ids[0]] = "用户"
-                label_map[ids[1]] = "对方"
-        conn.close()
-    return label_map
 
 
 def fetch_messages_multi(db_paths: list[Path], table: str, since_ts, until_ts) -> list[dict]:

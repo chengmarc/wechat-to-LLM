@@ -24,8 +24,10 @@ description: 从已解密的微信数据库中提取群聊记录，输出为 LLM
 ### Step 1：定位群聊表名
 
 ```bash
+cd ~/Repo/wechat-to-LLM
+
 # 1a. 在 contact.db 中查找群聊
-sqlite3 ~/Repo/wechat-decrypt/decrypted/contact/contact.db \
+sqlite3 wechat-decrypt/decrypted/contact/contact.db \
   "SELECT username, nick_name, remark FROM contact
    WHERE username LIKE '%@chatroom%'
      AND (nick_name LIKE '%关键词%' OR remark LIKE '%关键词%');"
@@ -43,22 +45,24 @@ python -c "import hashlib; print('Msg_' + hashlib.md5('12345678@chatroom'.encode
 > **手动备选**：
 >
 > ```bash
+> cd ~/Repo/wechat-to-LLM
+>
 > # 提取消息表中出现的 wxid
-> sqlite3 ~/Repo/wechat-decrypt/decrypted/message/message_0.db \
+> sqlite3 wechat-decrypt/decrypted/message/message_0.db \
 >   "SELECT DISTINCT substr(message_content, 1, instr(message_content, char(58,10)) - 1)
 >    FROM Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 >    WHERE local_type = 1 AND instr(message_content, char(58,10)) > 0 ORDER BY 1;"
 >
 > # 查询昵称并保存
-> sqlite3 -json ~/Repo/wechat-decrypt/decrypted/contact/contact.db \
+> sqlite3 -json wechat-decrypt/decrypted/contact/contact.db \
 >   "SELECT username, nick_name, remark FROM contact
 >    WHERE username IN ('wxid_aaa', 'wxid_bbb', ...);" \
->   > ~/Repo/wechat-to-LLM/output/id_map_{名称}.json
+>   > output/id_map_{名称}.json
 > ```
 
 ### Step 3：导出
 
-输出文件固定放在 `~/Repo/wechat-to-LLM/output/`，命名为 `chat_{名称}.txt`。
+输出文件固定放在 `output/`，命名为 `chat_{名称}.txt`。
 
 加 `--contact-db` 时自动生成/更新 id_map.json，省去 Step 2：
 
@@ -67,15 +71,15 @@ cd ~/Repo/wechat-to-LLM
 
 # 最近 1 天（默认），自动生成 id_map
 python scripts/export_chatroom.py \
-  --db ~/Repo/wechat-decrypt/decrypted/message/message_0.db \
+  --db wechat-decrypt/decrypted/message/message_0.db \
   --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  --contact-db ~/Repo/wechat-decrypt/decrypted/contact/contact.db \
+  --contact-db wechat-decrypt/decrypted/contact/contact.db \
   --id-map output/id_map_{名称}.json \
   > output/chat_{名称}.txt
 
 # id_map 已存在时可省略 --contact-db
 python scripts/export_chatroom.py \
-  --db ~/Repo/wechat-decrypt/decrypted/message/message_0.db \
+  --db wechat-decrypt/decrypted/message/message_0.db \
   --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
   --id-map output/id_map_{名称}.json \
   --days 7 > output/chat_{名称}.txt

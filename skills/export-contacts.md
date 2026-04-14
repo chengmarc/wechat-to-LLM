@@ -24,8 +24,8 @@ description: 按消息量扫描所有联系人，列出超过阈值的重要联�
 ```bash
 cd ~/Repo/wechat-to-LLM
 python scripts/export_contacts.py \
-  --contact-db ~/Repo/wechat-decrypt/decrypted/contact/contact.db \
-  --msg-dbs ~/Repo/wechat-decrypt/decrypted/message/message_*.db \
+  --contact-db wechat-decrypt/decrypted/contact/contact.db \
+  --msg-dbs wechat-decrypt/decrypted/message/message_*.db \
   --threshold 100
 ```
 
@@ -59,7 +59,7 @@ python scripts/export_contacts.py \
 
 ```bash
 cd ~/Repo/wechat-to-LLM
-BASE=~/Repo/wechat-decrypt/decrypted/message
+BASE=wechat-decrypt/decrypted/message
 
 python scripts/export_private.py \
   --db $BASE/message_0.db $BASE/message_1.db $BASE/message_2.db \

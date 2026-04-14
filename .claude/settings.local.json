@@ -34,7 +34,18 @@
       "Bash(python scripts/export_private.py --db ~/Repo/wechat-decrypt/decrypted/message/message_5.db --table Msg_0d37bf66ac49f5b8ebb5c91aa5b09c63 --my-id 2 --other-id 81)",
       "Bash(python scripts/export_private.py --db ~/Repo/wechat-decrypt/decrypted/message/message_4.db --table Msg_0d37bf66ac49f5b8ebb5c91aa5b09c63 --my-id 3 --other-id 107)",
       "Bash(python scripts/export_private.py --db ~/Repo/wechat-decrypt/decrypted/message/message_1.db --table Msg_0d37bf66ac49f5b8ebb5c91aa5b09c63)",
-      "Bash(python scripts/export_private.py --db ~/Repo/wechat-decrypt/decrypted/message/message_0.db --table Msg_0d37bf66ac49f5b8ebb5c91aa5b09c63)"
+      "Bash(python scripts/export_private.py --db ~/Repo/wechat-decrypt/decrypted/message/message_0.db --table Msg_0d37bf66ac49f5b8ebb5c91aa5b09c63)",
+      "Bash(python scripts/export_private.py --db '~/Repo/wechat-decrypt/decrypted/message/message_5.db' --table Msg_240892e67eb38a82b34b7dbc3455f4b8 --my-id 2 --other-id 11)",
+      "Bash(python scripts/export_private.py --db '~/Repo/wechat-decrypt/decrypted/message/message_4.db' --table Msg_240892e67eb38a82b34b7dbc3455f4b8 --my-id 2 --other-id 11)",
+      "Bash(python scripts/export_private.py --db '~/Repo/wechat-decrypt/decrypted/message/message_3.db' --table Msg_240892e67eb38a82b34b7dbc3455f4b8 --my-id 2 --other-id 11)",
+      "Bash(python scripts/export_private.py --db '~/Repo/wechat-decrypt/decrypted/message/message_2.db' --table Msg_240892e67eb38a82b34b7dbc3455f4b8 --my-id 2 --other-id 11)",
+      "Bash(python scripts/export_private.py --db '~/Repo/wechat-decrypt/decrypted/message/message_1.db' --table Msg_240892e67eb38a82b34b7dbc3455f4b8 --my-id 2 --other-id 11)",
+      "Bash(python scripts/export_private.py --db '~/Repo/wechat-decrypt/decrypted/message/message_4.db' --table Msg_240892e67eb38a82b34b7dbc3455f4b8 --my-id 3 --other-id 22)",
+      "Bash(python scripts/export_private.py --db '~/Repo/wechat-decrypt/decrypted/message/message_2.db' --table Msg_240892e67eb38a82b34b7dbc3455f4b8 --my-id 1 --other-id 193)",
+      "Bash(python scripts/export_private.py --db ~/Repo/wechat-decrypt/decrypted/message/message_3.db --table Msg_0d37bf66ac49f5b8ebb5c91aa5b09c63 --my-id 2 --other-id 10)",
+      "Bash(python scripts/export_private.py --db ~/Repo/wechat-decrypt/decrypted/message/message_2.db --table Msg_0d37bf66ac49f5b8ebb5c91aa5b09c63 --my-id 1 --other-id 68)",
+      "Bash(python scripts/export_private.py --db ~/Repo/wechat-decrypt/decrypted/message/message_1.db --table Msg_0d37bf66ac49f5b8ebb5c91aa5b09c63 --my-id 2 --other-id 58)",
+      "Bash(python scripts/export_private.py --db ~/Repo/wechat-decrypt/decrypted/message/message_0.db --table Msg_0d37bf66ac49f5b8ebb5c91aa5b09c63 --my-id 4 --other-id 7)"
     ]
   }
 }

@@ -355,6 +355,6 @@ def compress(messages: list[dict], format_fn, threshold: int, tz: timezone) -> t
             tag = dt.strftime("%y-%m-%d %H:%M")
             lines.append(f"\n\n-----------------------\n[{tag}]\n-----------------------")
         last_ts = ts
-        lines.append(f"{sender}：{content}|")
+        lines.append(f"{sender}：{content}⏎")
 
     return "\n".join(lines), skipped

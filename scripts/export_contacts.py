@@ -135,11 +135,21 @@ def main():
 
     count_w = max(len(str(r["count"])) for r in results)
     rank_w = len(str(len(results)))
-    print(f"{'#':>{rank_w}}  {'消息数':>{count_w}}  显示名\t\twxid\t\t消息表\t\t\t\t所在库")
-    print("-" * 100)
+    name_w = max(len(r["display"]) for r in results)
+    wxid_w = max(len(r["username"]) for r in results)
+
+    header = (
+        f"{'#':>{rank_w}}  {'消息数':>{count_w}}  "
+        f"{'显示名':<{name_w}}  {'wxid':<{wxid_w}}  {'消息表':<36}  所在库"
+    )
+    print(header)
+    print("-" * len(header))
 
     for i, r in enumerate(results, 1):
-        print(f"{i:>{rank_w}}  {r['count']:>{count_w}}  {r['display']}\t{r['username']}\t{r['table']}\t{r['dbs']}")
+        print(
+            f"{i:>{rank_w}}  {r['count']:>{count_w}}  "
+            f"{r['display']:<{name_w}}  {r['username']:<{wxid_w}}  {r['table']:<36}  {r['dbs']}"
+        )
 
 
 if __name__ == "__main__":

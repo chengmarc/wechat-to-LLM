@@ -6,6 +6,7 @@ import hashlib
 import sqlite3
 import sys
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ except ImportError:
     _HAS_ZSTD = False
 
 _ZSTD_MAGIC = b'\x28\xb5\x2f\xfd'
+_APPMSG_TYPE_BASE = 2 ** 32  # local_type = appmsg_inner_type × 2³² + 49
 
 # binary 媒体类型 → 只标注类型，不可读内容
 _MEDIA_LABELS: dict[int, str] = {
@@ -211,7 +213,7 @@ def _decode_system(raw: Any) -> str | None:
     # 搜索 XML 起始位置（部分 system 消息在 zstd 帧头后紧跟 XML）
     for marker in ("<?xml", "<sysmsg"):
         idx = text.find(marker)
-        if idx > 0:
+        if idx >= 0:
             text = text[idx:]
             break
 
@@ -255,9 +257,9 @@ def decode_content(
     if local_type in _MEDIA_LABELS:
         return _MEDIA_LABELS[local_type]
 
-    # 扩展类型：local_type % 2^32 == 49 → appmsg（zstd 压缩 XML）
+    # 扩展类型：local_type % _APPMSG_TYPE_BASE == 49 → appmsg（zstd 压缩 XML）
     # 编码规律：local_type = appmsg_inner_type × 2^32 + 49
-    if local_type > 100 and local_type % (2 ** 32) == 49:
+    if local_type > 100 and local_type % _APPMSG_TYPE_BASE == 49:
         if not isinstance(raw, bytes):
             return None
         dec = _try_decompress(raw)
@@ -275,22 +277,10 @@ def decode_content(
 # 消息拉取
 # ---------------------------------------------------------------------------
 
-def detect_sender_ids(db_path: Path, table: str) -> tuple[int, int]:
-    """
-    自动推断双人会话的 (my_id, other_id)。
-    规律：两个 real_sender_id 中较小的为 my_id，较大的为 other_id。
-    若找不到恰好两个发送者，抛出 SystemExit 提示手动指定。
-    """
-    conn = sqlite3.connect(db_path)
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     cur = conn.cursor()
-    cur.execute(f"SELECT DISTINCT real_sender_id FROM {table} WHERE local_type = 1")
-    ids = sorted(r[0] for r in cur.fetchall())
-    conn.close()
-    if len(ids) == 2:
-        return ids[0], ids[1]
-    raise SystemExit(
-        f"错误：找到 {len(ids)} 个发送者 ID {ids}，无法自动推断，请手动指定 --my-id / --other-id"
-    )
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+    return cur.fetchone() is not None
 
 
 def fetch_messages(
@@ -326,11 +316,55 @@ def fetch_messages(
     ]
 
 
+def detect_sender_ids_multi(db_paths: list[Path], table: str) -> tuple[int, int]:
+    """
+    跨多个 DB 收集 distinct real_sender_id，推断双人会话的 (my_id, other_id)。
+    规律：两个 ID 中较小的为 my_id，较大的为 other_id。
+    """
+    all_ids: set[int] = set()
+    for db_path in db_paths:
+        conn = sqlite3.connect(db_path)
+        if _table_exists(conn, table):
+            cur = conn.cursor()
+            cur.execute(f"SELECT DISTINCT real_sender_id FROM {table} WHERE local_type = 1")
+            all_ids.update(r[0] for r in cur.fetchall())
+        conn.close()
+    ids = sorted(all_ids)
+    if len(ids) == 2:
+        return ids[0], ids[1]
+    raise SystemExit(
+        f"错误：跨所有库共找到 {len(ids)} 个发送者 ID {ids}，"
+        f"无法自动推断，请手动指定 --my-id / --other-id"
+    )
+
+
+def fetch_messages_multi(db_paths: list[Path], table: str, since_ts, until_ts) -> list[dict]:
+    """从多个 DB 拉取消息，按时间戳排序后合并返回。"""
+    all_messages = []
+    for db_path in db_paths:
+        conn = sqlite3.connect(db_path)
+        has_table = _table_exists(conn, table)
+        conn.close()
+        if not has_table:
+            print(f"{db_path.name}: 无此表，跳过", file=sys.stderr)
+            continue
+        msgs = fetch_messages(db_path, table, since_ts, until_ts)
+        print(f"{db_path.name}: {len(msgs)} 条", file=sys.stderr)
+        all_messages.extend(msgs)
+    all_messages.sort(key=lambda m: m["ts"])
+    return all_messages
+
+
 # ---------------------------------------------------------------------------
 # 压缩输出
 # ---------------------------------------------------------------------------
 
-def compress(messages: list[dict], format_fn, threshold: int, tz: timezone) -> tuple[str, int]:
+def compress(
+    messages: list[dict],
+    format_fn: Callable[[dict], tuple[str, str] | None],
+    threshold: int,
+    tz: timezone,
+) -> tuple[str, int]:
     """
     将消息列表压缩为带时段分隔的文本。
 

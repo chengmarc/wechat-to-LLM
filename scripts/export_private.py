@@ -25,11 +25,14 @@
 """
 
 import argparse
-import sqlite3
 import sys
 from pathlib import Path
 
-from common import add_time_args, resolve_time_range, log_time_range, fetch_messages, compress, decode_content
+from common import (
+    add_time_args, resolve_time_range, log_time_range,
+    fetch_messages_multi, detect_sender_ids_multi,
+    compress, decode_content,
+)
 
 
 def make_format_fn(my_id: int, other_id: int, other_table_hash: str):
@@ -52,45 +55,6 @@ def make_format_fn(my_id: int, other_id: int, other_table_hash: str):
         return label, content
 
     return format_fn
-
-
-def detect_sender_ids_multi(db_paths: list[Path], table: str) -> tuple[int, int]:
-    """跨多个 DB 收集 distinct real_sender_id，推断 (my_id, other_id)。"""
-    all_ids: set[int] = set()
-    for db_path in db_paths:
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
-        if cur.fetchone():
-            cur.execute(f"SELECT DISTINCT real_sender_id FROM {table} WHERE local_type = 1")
-            all_ids.update(r[0] for r in cur.fetchall())
-        conn.close()
-    ids = sorted(all_ids)
-    if len(ids) == 2:
-        return ids[0], ids[1]
-    raise SystemExit(
-        f"错误：跨所有库共找到 {len(ids)} 个发送者 ID {ids}，"
-        f"无法自动推断，请手动指定 --my-id / --other-id"
-    )
-
-
-def fetch_messages_multi(db_paths: list[Path], table: str, since_ts, until_ts) -> list[dict]:
-    """从多个 DB 拉取消息，按时间戳排序后合并返回。"""
-    all_messages = []
-    for db_path in db_paths:
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
-        has_table = cur.fetchone() is not None
-        conn.close()
-        if not has_table:
-            print(f"{db_path.name}: 无此表，跳过", file=sys.stderr)
-            continue
-        msgs = fetch_messages(db_path, table, since_ts, until_ts)
-        print(f"{db_path.name}: {len(msgs)} 条", file=sys.stderr)
-        all_messages.extend(msgs)
-    all_messages.sort(key=lambda m: m["ts"])
-    return all_messages
 
 
 def parse_args():

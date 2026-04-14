@@ -127,7 +127,15 @@ def parse_text_content(raw) -> tuple[str | None, str] | None:
     return None, content
 
 
-def make_format_fn(sender_map: dict[str, str]):
+def build_name2id_map(db_path: Path) -> dict[int, str]:
+    """从 Name2Id 表读取 rowid → user_name 映射，用于解析非文字消息的发送方。"""
+    conn = sqlite3.connect(db_path)
+    rows = conn.execute("SELECT rowid, user_name FROM Name2Id").fetchall()
+    conn.close()
+    return {r[0]: r[1] for r in rows if r[1]}
+
+
+def make_format_fn(sender_map: dict[str, str], name2id_map: dict[int, str]):
     def format_fn(msg) -> tuple[str, str] | None:
         local_type = msg["local_type"]
 
@@ -146,14 +154,17 @@ def make_format_fn(sender_map: dict[str, str]):
                 sender = "【?】"
             return sender, content
 
-        # 其他类型：用 decode_content 解码内容；sender 用 real_sender_id 查表
-        # 注意：群聊 real_sender_id 对非文字消息的可靠性未经完整验证
+        # 其他类型：用 decode_content 解码内容；real_sender_id 经 Name2Id rowid 反查 wxid
         content = decode_content(local_type, msg["content"])
         if content is None:
             return None
 
-        # real_sender_id 在群聊中通常是数字，无法直接映射到 wxid；只能标 [?]
-        sender = "【?】"
+        wxid = name2id_map.get(msg["sender_id"])
+        if wxid:
+            display = sender_map.get(wxid, wxid)
+            sender = f"【{display}】"
+        else:
+            sender = "【?】"
         return sender, content
 
     return format_fn
@@ -183,6 +194,8 @@ def main():
     else:
         sender_map = build_sender_map(id_map_path)
 
+    name2id_map = build_name2id_map(Path(args.db))
+
     messages = fetch_messages(Path(args.db), args.table, since_ts, until_ts)
     print(f"共 {len(messages)} 条消息（含所有类型）", file=sys.stderr)
 
@@ -190,7 +203,7 @@ def main():
         print("该时间段内无消息。", file=sys.stderr)
         return
 
-    text, skipped = compress(messages, make_format_fn(sender_map), args.threshold, tz)
+    text, skipped = compress(messages, make_format_fn(sender_map, name2id_map), args.threshold, tz)
     if skipped:
         print(f"跳过不可解码消息：{skipped} 条", file=sys.stderr)
     print(text)

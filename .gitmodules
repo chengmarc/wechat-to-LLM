@@ -1,0 +1,3 @@
+[submodule "wechat-decrypt"]
+	path = wechat-decrypt
+	url = https://github.com/ylytdeng/wechat-decrypt

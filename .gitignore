@@ -1,4 +1,6 @@
 .claude/
-backup/all_keys.json
-output/
+backup/*
+!backup/.gitkeep
+output/*
+!output/.gitkeep
 __pycache__/

@@ -43,18 +43,30 @@ python scripts/export_contacts.py \
 **输出格式**：
 
 ```
- #  消息数  显示名    wxid            消息表
---------------------------------------------------------------------
- 1    4821  张雪      wxid_abc...     Msg_xxxxxxxx...
- 2    1203  王总      wxid_def...     Msg_yyyyyyyy...
+ #  消息数  显示名    wxid            消息表                          所在库
+----------------------------------------------------------------------------------------------------
+ 1    4821  张雪      wxid_abc...     Msg_xxxxxxxx...                 0,1,2
+ 2    1203  王总      wxid_def...     Msg_yyyyyyyy...                 0
 ```
+
+"所在库"列直接告知该联系人的消息分布在哪些 message_N.db 中，可直接用于 export-private 的 `--db` 参数。
 
 进度（扫描哪个库）输出到 stderr，结果表格输出到 stdout。
 
 ### Step 2：按需导出
 
-根据上一步的结果，选择联系人后使用 `export-private` 导出。
+根据上一步的结果，"所在库"列已标明消息分布，直接拼入 `--db` 参数即可：
 
-> **重要**：export-contacts 的消息数是跨所有库的合计，但 export-private 每次只能指定一个 `--db`。导出前先确认该联系人的表在哪些库里有数据（见 export-private 跨库合并流程）。
+```bash
+cd ~/Repo/wechat-to-LLM
+BASE=~/Repo/wechat-decrypt/decrypted/message
+
+python scripts/export_private.py \
+  --db $BASE/message_0.db $BASE/message_1.db $BASE/message_2.db \
+  --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
+  > output/chat_{名称}.txt
+```
+
+若"所在库"只有一个编号，省略多余的 `--db` 即可。
 
 若列表中有群聊（使用 `--include-chatrooms` 时出现），用 `export-chatroom` 导出。

@@ -42,68 +42,53 @@ python -c "import hashlib; print('Msg_' + hashlib.md5('wxid_xxxxxxxx'.encode()).
 
 ### Step 3：确认消息分布在哪些库
 
-同一联系人的消息可能横跨多个库。先查表名在各库中的行数和时间范围：
+> **快捷方式**：`export-contacts` 的输出已包含"所在库"列，可直接跳过此步。
+
+同一联系人的消息可能横跨多个库。查表名在各库中的行数和时间范围：
 
 ```bash
 python -c "
-import sqlite3, os
+import sqlite3, glob, os
 from datetime import datetime, timezone, timedelta
 tz = timezone(timedelta(hours=8))
 table = 'Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 base = os.path.expanduser('~/Repo/wechat-decrypt/decrypted/message')
-for i in range(8):
-    db = os.path.join(base, f'message_{i}.db')
+for db in sorted(glob.glob(os.path.join(base, 'message_*.db'))):
     conn = sqlite3.connect(db)
     cur = conn.cursor()
     cur.execute('SELECT name FROM sqlite_master WHERE type=\'table\' AND name=?', (table,))
     if cur.fetchone():
         cur.execute(f'SELECT MIN(create_time), MAX(create_time), COUNT(*) FROM {table}')
         mn, mx, cnt = cur.fetchone()
-        print(f'message_{i}.db: {cnt} 条  {datetime.fromtimestamp(mn,tz).strftime(\"%Y-%m-%d\")} ~ {datetime.fromtimestamp(mx,tz).strftime(\"%Y-%m-%d\")}')
+        print(f'{os.path.basename(db)}: {cnt} 条  {datetime.fromtimestamp(mn,tz).strftime(\"%Y-%m-%d\")} ~ {datetime.fromtimestamp(mx,tz).strftime(\"%Y-%m-%d\")}')
     else:
-        print(f'message_{i}.db: (无此表)')
+        print(f'{os.path.basename(db)}: (无此表)')
     conn.close()
 "
 ```
 
-### Step 4：导出并合并
+### Step 4：导出
 
 输出文件固定放在 `~/Repo/wechat-to-LLM/output/`，命名为 `chat_{名称}.txt`。
 
-**单库导出**（消息只在 message_0）：
-
-```bash
-cd ~/Repo/wechat-to-LLM
-python scripts/export_private.py \
-  --db ~/Repo/wechat-decrypt/decrypted/message/message_0.db \
-  --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  > output/chat_{名称}.txt
-```
-
-**跨库合并导出**（消息分散在多个库时）：
-
-按时间顺序从旧到新依次导出，高编号库用 `>` 建文件，低编号库用 `>>` 追加：
+`--db` 支持传多个路径，脚本自动按时间戳排序合并，无需手动控制顺序：
 
 ```bash
 cd ~/Repo/wechat-to-LLM
 
-# 从最旧的库开始（编号最大），逐步追加到最新的库
-python scripts/export_private.py \
-  --db ~/Repo/wechat-decrypt/decrypted/message/message_2.db \
-  --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  --my-id 2 --other-id 102 \
-  > output/chat_{名称}.txt
-
-python scripts/export_private.py \
-  --db ~/Repo/wechat-decrypt/decrypted/message/message_1.db \
-  --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  --my-id 2 --other-id 102 \
-  >> output/chat_{名称}.txt
-
+# 单库
 python scripts/export_private.py \
   --db ~/Repo/wechat-decrypt/decrypted/message/message_0.db \
   --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  >> output/chat_{名称}.txt
+  > output/chat_{名称}.txt
+
+# 跨库（直接传多个 --db，顺序无关）
+python scripts/export_private.py \
+  --db ~/Repo/wechat-decrypt/decrypted/message/message_0.db \
+      ~/Repo/wechat-decrypt/decrypted/message/message_1.db \
+      ~/Repo/wechat-decrypt/decrypted/message/message_2.db \
+  --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
+  > output/chat_{名称}.txt
 ```
 
 > **推断失败时**：若报"无法自动推断"错误（例如某库只有单方消息），先查各 ID 的消息内容确认哪个是自己（一般较小的那个），再手动指定 `--my-id` / `--other-id`。

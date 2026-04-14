@@ -11,18 +11,16 @@
 示例：
     python scripts/export_contacts.py \\
       --contact-db ~/Repo/wechat-decrypt/decrypted/contact/contact.db \\
-      --msg-dbs ~/Repo/wechat-decrypt/decrypted/message/message_0.db \\
-               ~/Repo/wechat-decrypt/decrypted/message/message_1.db \\
-               ~/Repo/wechat-decrypt/decrypted/message/message_2.db \\
-               ... \\
+      --msg-dbs ~/Repo/wechat-decrypt/decrypted/message/message_*.db \\
       --threshold 100
 
-输出字段（tab 分隔）：
-    排名  消息数  显示名  wxid  消息表
+输出字段：
+    排名  消息数  显示名  wxid  消息表  所在库
 """
 
 import argparse
 import hashlib
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -51,14 +49,32 @@ def get_table_counts(db_path: Path) -> dict[str, int]:
     return counts
 
 
-def merge_table_counts(db_paths: list[Path]) -> dict[str, int]:
-    """合并多个消息库的行计数（同一联系人的消息可能分散在 message_0～7 中）。"""
-    merged: dict[str, int] = {}
+def db_number(db_path: Path) -> str:
+    """从文件名提取库编号，如 message_2.db → '2'；提取失败则返回文件名。"""
+    m = re.search(r"message_(\d+)", db_path.name)
+    return m.group(1) if m else db_path.name
+
+
+def merge_table_counts(db_paths: list[Path]) -> tuple[dict[str, int], dict[str, list[str]]]:
+    """
+    合并多个消息库的行计数。
+
+    返回：
+        merged_counts  {table: total_count}
+        table_dbs      {table: [db编号, ...]}  按库编号升序排列
+    """
+    merged_counts: dict[str, int] = {}
+    table_dbs: dict[str, list[str]] = {}
     for db_path in db_paths:
         print(f"扫描 {db_path.name} ...", file=sys.stderr)
+        num = db_number(db_path)
         for table, count in get_table_counts(db_path).items():
-            merged[table] = merged.get(table, 0) + count
-    return merged
+            merged_counts[table] = merged_counts.get(table, 0) + count
+            table_dbs.setdefault(table, []).append(num)
+    # 按编号排序（数字优先，其余字母序）
+    for nums in table_dbs.values():
+        nums.sort(key=lambda x: int(x) if x.isdigit() else x)
+    return merged_counts, table_dbs
 
 
 def display_name(c: dict) -> str:
@@ -69,7 +85,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--contact-db", required=True, dest="contact_db", help="contact.db 路径")
     parser.add_argument("--msg-dbs", required=True, nargs="+", dest="msg_dbs",
-                        help="消息库路径列表，如 message_0.db message_1.db")
+                        help="消息库路径列表，支持 shell glob，如 message_*.db")
     parser.add_argument("--threshold", type=int, default=50,
                         help="最低消息数阈值，默认 50")
     parser.add_argument("--include-chatrooms", action="store_true", dest="include_chatrooms",
@@ -89,7 +105,7 @@ def main():
         h = hashlib.md5(c["username"].encode()).hexdigest()
         hash_to_contact[h] = c
 
-    table_counts = merge_table_counts([Path(p) for p in args.msg_dbs])
+    table_counts, table_dbs = merge_table_counts([Path(p) for p in args.msg_dbs])
 
     results = []
     for table, count in table_counts.items():
@@ -106,6 +122,7 @@ def main():
             "username": contact["username"],
             "table": table,
             "count": count,
+            "dbs": ",".join(table_dbs.get(table, [])),
         })
 
     results.sort(key=lambda x: x["count"], reverse=True)
@@ -116,14 +133,13 @@ def main():
 
     print(f"共找到 {len(results)} 个联系人（阈值 {args.threshold} 条）\n", file=sys.stderr)
 
-    # 表头
     count_w = max(len(str(r["count"])) for r in results)
     rank_w = len(str(len(results)))
-    print(f"{'#':>{rank_w}}  {'消息数':>{count_w}}  显示名\t\twxid\t\t消息表")
-    print("-" * 80)
+    print(f"{'#':>{rank_w}}  {'消息数':>{count_w}}  显示名\t\twxid\t\t消息表\t\t\t\t所在库")
+    print("-" * 100)
 
     for i, r in enumerate(results, 1):
-        print(f"{i:>{rank_w}}  {r['count']:>{count_w}}  {r['display']}\t{r['username']}\t{r['table']}")
+        print(f"{i:>{rank_w}}  {r['count']:>{count_w}}  {r['display']}\t{r['username']}\t{r['table']}\t{r['dbs']}")
 
 
 if __name__ == "__main__":

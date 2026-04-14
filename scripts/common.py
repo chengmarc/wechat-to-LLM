@@ -107,6 +107,17 @@ def _raw_to_str(raw: Any) -> str | None:
     return str(raw)
 
 
+def _el_text(el: ET.Element | None) -> str:
+    """返回 XML 元素的文本（None-safe，strip 后），元素为 None 时返回空字符串。"""
+    return (el.text or "").strip() if el is not None else ""
+
+
+def _el_int(el: ET.Element | None, default: int = 0) -> int:
+    """返回 XML 元素文本对应的整数，元素为 None 或内容非数字时返回 default。"""
+    s = _el_text(el)
+    return int(s) if s.isdigit() else default
+
+
 def _parse_share_xml(xml_text: str) -> str:
     """从分享消息 XML 中提取标题，返回人类可读字符串。"""
     try:
@@ -124,7 +135,7 @@ def _decode_ref_content(ref_type: int, ref_content_el: ET.Element | None) -> str
     if ref_type in _MEDIA_LABELS:
         return _MEDIA_LABELS[ref_type]
 
-    raw_ref = (ref_content_el.text or "").strip() if ref_content_el is not None else ""
+    raw_ref = _el_text(ref_content_el)
 
     if ref_type == 1:
         # 文字消息；但可能自身又是一个 appmsg XML（引用了分享链接）
@@ -157,12 +168,8 @@ def _decode_appmsg_xml(xml_text: str, other_table_hash: str | None = None) -> st
     if appmsg is None:
         return None
 
-    type_el = appmsg.find("type")
-    atype_str = (type_el.text or "").strip() if type_el is not None else ""
-    atype = int(atype_str) if atype_str.isdigit() else 0
-
-    title_el = appmsg.find("title")
-    title = (title_el.text or "").strip() if title_el is not None else ""
+    atype = _el_int(appmsg.find("type"))
+    title = _el_text(appmsg.find("title"))
 
     # ---- 引用回复 (appmsg type=57) ----------------------------------------
     if atype == 57:
@@ -170,15 +177,9 @@ def _decode_appmsg_xml(xml_text: str, other_table_hash: str | None = None) -> st
         if refermsg is None:
             return title or None
 
-        ref_type_el = refermsg.find("type")
-        ref_type_str = (ref_type_el.text or "").strip() if ref_type_el is not None else ""
-        ref_type = int(ref_type_str) if ref_type_str.isdigit() else 0
-
-        ref_content_el = refermsg.find("content")
-        ref_fromusr_el = refermsg.find("fromusr")
-        ref_fromusr = (ref_fromusr_el.text or "").strip() if ref_fromusr_el is not None else ""
-
-        ref_content = _decode_ref_content(ref_type, ref_content_el)
+        ref_type = _el_int(refermsg.find("type"))
+        ref_fromusr = _el_text(refermsg.find("fromusr"))
+        ref_content = _decode_ref_content(ref_type, refermsg.find("content"))
 
         # 判断被引用消息的发送方
         if other_table_hash and ref_fromusr:
@@ -190,8 +191,7 @@ def _decode_appmsg_xml(xml_text: str, other_table_hash: str | None = None) -> st
         return f"「引用 {ref_label}：{ref_content}」{reply_text}"
 
     # ---- 链接/卡片分享 (appmsg type=4,5,1,6,…) ----------------------------
-    url_el = appmsg.find("url")
-    url = (url_el.text or "").strip() if url_el is not None else ""
+    url = _el_text(appmsg.find("url"))
 
     if title and url:
         return f"[分享] {title} {url}"
@@ -351,7 +351,7 @@ def compress(messages: list[dict], format_fn, threshold: int, tz: timezone) -> t
         sender, content = result
         ts = msg["ts"]
         if last_ts is None or ts - last_ts > threshold:
-            dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(tz)
+            dt = datetime.fromtimestamp(ts, tz=tz)
             tag = dt.strftime("%y-%m-%d %H:%M")
             lines.append(f"\n\n-----------------------\n[{tag}]\n-----------------------")
         last_ts = ts

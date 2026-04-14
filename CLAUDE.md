@@ -6,52 +6,25 @@
 
 ```
 scripts/
-  common.py            # 共用工具：时间参数解析、进度日志、compress()、decode_content()
-  export_contacts.py     # 按消息量扫描重要联系人，支持多消息库
+  common.py            # 共用工具：时间参数解析、进度日志、消息拉取、解码、压缩输出
+  export_contacts.py   # 按消息量扫描重要联系人，支持多消息库
   export_private.py    # 双人会话导出脚本
   export_chatroom.py   # 群聊导出脚本
 skills/
   common.md            # Claude Skill：公共知识库（DB schema、Step 0、公共参数）
-  export-contacts.md   # Claude Skill：按消息量扫描重要联系人（依赖 common）
+  export-contacts.md   # Claude Skill：扫描重要联系人（依赖 common）
   export-private.md    # Claude Skill：双人会话（依赖 common）
   export-chatroom.md   # Claude Skill：群聊（依赖 common）
   summary.md           # Claude Skill：群聊总结模板
 ```
 
-`common.py` 提供：`add_time_args` / `resolve_time_range` / `log_time_range` / `compress` / `decode_content`。
-`compress(messages, format_fn, threshold, tz)` 接受回调 `format_fn(msg) -> (sender, content) | None`，返回 `(text, skipped_count)`。
+## 消息编码实现细节
 
-## 数据库结构
+> 操作层面（DB 路径、表格式、消息类型→输出映射、输出格式）见 `skills/common.md`。
 
-解密后两个 SQLite 库，位于 `wechat-decrypt/decrypted/`：
+### appmsg 扩展类型（`local_type % 2³² == 49`）
 
-- `contact/contact.db`：联系人表，字段 `username`（wxid）/ `nick_name` / `remark` / `alias`
-- `message/message_0.db`：消息库，每个联系人一张表，表名 = `Msg_` + MD5(wxid)
-
-消息表有效字段：`local_id` / `local_type` / `real_sender_id` / `create_time`（Unix 秒）/ `message_content`
-
-## local_type 完整枚举
-
-| local_type | 类型 | message_content | 导出输出 |
-|---|---|---|---|
-| 1 | 文字 | UTF-8 明文 | 原文 |
-| 3 | 图片 | binary blob | `[图片]` |
-| 34 | 语音 | binary blob | `[语音]` |
-| 42 | 名片 | binary blob | `[名片]` |
-| 43 | 视频 | binary blob | `[视频]` |
-| 47 | 微信表情 | binary blob | `[表情]` |
-| 48 | 位置 | binary blob | `[位置]` |
-| 50 | 通话 | binary blob | `[通话]` |
-| 10000 | 系统通知 | 见下方说明 | `[撤回了一条消息]` 等 |
-| `N × 2³² + 49` | appmsg 扩展类型 | zstd 压缩 XML | 见下方说明 |
-
-### appmsg 扩展类型（大数字）
-
-所有 `local_type % (2³²) == 49` 的消息均为 **zstd 压缩的 appmsg XML**。
-
-**编码规律**：`local_type = appmsg_inner_type × 2³² + 49`
-
-解压后是标准 XML，`<appmsg><type>N</type>` 决定实际类型：
+编码规律：`local_type = appmsg_inner_type × 2³² + 49`。内容为 **zstd 压缩的 appmsg XML**，`<appmsg><type>N</type>` 决定实际类型：
 
 | appmsg inner type | 类型 | local_type 示例 | 导出输出 |
 |---|---|---|---|
@@ -62,18 +35,9 @@ skills/
 
 zstd 魔数：`\x28\xb5\x2f\xfd`（前4字节）。解压依赖 `zstandard` 库；未安装时显示 `[需安装 zstandard 库以读取此消息]`。
 
-### type=10000 系统消息
+#### 引用消息发送方判断（`other_table_hash`）
 
-部分系统消息是 zstd 压缩数据，部分是在 zstd 帧头后**直接拼接明文 XML**（非完整压缩帧）。
-解码策略：优先 zstd 解压；失败则在原始字节中搜索 `<?xml` / `<sysmsg` 的起始位置，截取后解析。
-
-常见内容：`<sysmsg type="revokemsg">` → `[你撤回了一条消息]` / `[对方撤回了一条消息]`。
-
-## 引用消息发送方判断（`other_table_hash`）
-
-引用回复的 XML 里有 `<refermsg><fromusr>wxid_xxx</fromusr>`，需要判断这个 wxid 是"用户"还是"对方"。
-
-由于表名 = `Msg_` + MD5(对方wxid)，可以直接比较：
+引用回复（type=57）的 XML 中有 `<refermsg><fromusr>wxid_xxx</fromusr>`。由于表名 = `Msg_` + MD5(对方wxid)，可直接比较：
 
 ```python
 hashlib.md5(fromusr.encode()).hexdigest() == table[4:]
@@ -81,7 +45,14 @@ hashlib.md5(fromusr.encode()).hexdigest() == table[4:]
 # False → 被引用消息是用户自己发的
 ```
 
-不需要查 contact.db，不需要额外参数。`export_private.py` 通过 `other_table_hash = table[4:]` 传入 `decode_content()`。
+不需要查 contact.db。`export_private.py` 通过 `other_table_hash = table[4:]` 传入 `decode_content()`。
+
+### type=10000 系统消息
+
+部分是完整 zstd 压缩数据，部分在 zstd 帧头后**直接拼接明文 XML**（非完整压缩帧）。
+解码策略：优先 zstd 解压；失败则在原始字节中搜索 `<?xml` / `<sysmsg` 起始位置，截取后解析。
+
+常见内容：`<sysmsg type="revokemsg">` → `[你撤回了一条消息]` / `[对方撤回了一条消息]`。
 
 ## 双人 vs 群聊的关键差异
 
@@ -104,34 +75,26 @@ wxid_xxx:\n正文内容
 - 默认时区 GMT+8，可用 `--tz` 调整
 - 时间过滤三选一：`--days N` / `--since YYYY-MM-DD` / 不填（私聊全量，群聊默认 1 天）
 - `fetch_messages` 拉取全部 local_type，不做前置过滤；类型过滤在 `decode_content()` 内处理
+- `compress(messages, format_fn, threshold, tz)` 接受回调 `format_fn(msg) -> (sender, content) | None`，返回 `(text, skipped_count)`
+
+### export_private.py
+
+- `--db` 支持传多个路径（`nargs="+"`），内部 `fetch_messages_multi` 跨库拉取后按 `create_time` 排序合并；`detect_sender_ids_multi` 跨库聚合 distinct sender_id 推断双方
 
 ### export_contacts.py
 
-- `--msg-dbs` 接受多个路径（空格分隔），合并各库计数
-- `--msg-dbs` 建议传入所有已解密的库（message_0.db、message_1.db……编号不设上限），同一联系人的消息可能分散在多个库中；message_0 为最新，编号越大越早
-- 算法：扫描各 DB 所有 `Msg_*` 表 → 合并行计数 → 反查 contact.db（MD5 比对）→ 过滤阈值 → 降序输出
+- `--msg-dbs` 建议传入所有已解密的库（`message_*.db` shell glob 自动展开），同一联系人的消息可能分散在多个库中
+- 算法：扫描各 DB 所有 `Msg_*` 表 → 合并行计数 + 记录所在库编号 → 反查 contact.db（MD5 比对）→ 过滤阈值 → 降序输出，附"所在库"列
 - 默认只输出双人会话；`--include-chatrooms` 加入群聊
 
-## 输出格式
+### export_chatroom.py
 
-```
------------------------
-[yy-MM-dd HH:mm]
------------------------
-用户：消息内容⏎
-对方：消息内容⏎
-```
-
-群聊发送者用 `【昵称】` 包裹；未在 id_map 中的 wxid 直接显示原始 ID。
+- `--contact-db` 可选参数；提供时调用 `auto_build_id_map` 从消息表提取 wxid 前缀、查 contact.db、写入 `--id-map` 路径，省去手动构建 id_map 步骤
 
 ## Skills 安装
 
 ```bash
-cp skills/common.md ~/.claude/skills/
-cp skills/export-contacts.md ~/.claude/skills/
-cp skills/export-private.md ~/.claude/skills/
-cp skills/export-chatroom.md ~/.claude/skills/
-cp skills/summary.md ~/.claude/skills/
+cp skills/*.md ~/.claude/skills/
 ```
 
 ## 依赖

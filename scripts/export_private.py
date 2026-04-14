@@ -2,10 +2,10 @@
 微信双人会话导出脚本，输出为 LLM 可读压缩文本。
 
 用法：
-    python scripts/export_private.py --db PATH --table MSG_TABLE [时间参数] > chat_private.txt
+    python scripts/export_private.py --db PATH [PATH ...] --table MSG_TABLE [时间参数] > chat_private.txt
 
 必填参数：
-    --db        message_0.db 路径
+    --db        message_N.db 路径（可传多个，自动按时间戳排序合并）
     --table     消息表名，如 Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 可选参数：
@@ -25,10 +25,11 @@
 """
 
 import argparse
+import sqlite3
 import sys
 from pathlib import Path
 
-from common import add_time_args, resolve_time_range, log_time_range, detect_sender_ids, fetch_messages, compress, decode_content
+from common import add_time_args, resolve_time_range, log_time_range, fetch_messages, compress, decode_content
 
 
 def make_format_fn(my_id: int, other_id: int, other_table_hash: str):
@@ -53,9 +54,48 @@ def make_format_fn(my_id: int, other_id: int, other_table_hash: str):
     return format_fn
 
 
+def detect_sender_ids_multi(db_paths: list[Path], table: str) -> tuple[int, int]:
+    """跨多个 DB 收集 distinct real_sender_id，推断 (my_id, other_id)。"""
+    all_ids: set[int] = set()
+    for db_path in db_paths:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        if cur.fetchone():
+            cur.execute(f"SELECT DISTINCT real_sender_id FROM {table} WHERE local_type = 1")
+            all_ids.update(r[0] for r in cur.fetchall())
+        conn.close()
+    ids = sorted(all_ids)
+    if len(ids) == 2:
+        return ids[0], ids[1]
+    raise SystemExit(
+        f"错误：跨所有库共找到 {len(ids)} 个发送者 ID {ids}，"
+        f"无法自动推断，请手动指定 --my-id / --other-id"
+    )
+
+
+def fetch_messages_multi(db_paths: list[Path], table: str, since_ts, until_ts) -> list[dict]:
+    """从多个 DB 拉取消息，按时间戳排序后合并返回。"""
+    all_messages = []
+    for db_path in db_paths:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        has_table = cur.fetchone() is not None
+        conn.close()
+        if not has_table:
+            print(f"{db_path.name}: 无此表，跳过", file=sys.stderr)
+            continue
+        msgs = fetch_messages(db_path, table, since_ts, until_ts)
+        print(f"{db_path.name}: {len(msgs)} 条", file=sys.stderr)
+        all_messages.extend(msgs)
+    all_messages.sort(key=lambda m: m["ts"])
+    return all_messages
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", required=True, help="message_0.db 路径")
+    parser.add_argument("--db", required=True, nargs="+", help="message_N.db 路径（可传多个）")
     parser.add_argument("--table", required=True, help="消息表名，如 Msg_xxxx")
     parser.add_argument("--my-id", type=int, default=None, dest="my_id", help="自己的 real_sender_id；省略时自动推断")
     parser.add_argument("--other-id", type=int, default=None, dest="other_id", help="对方的 real_sender_id；省略时自动推断")
@@ -68,18 +108,23 @@ def main():
     tz, since_ts, until_ts = resolve_time_range(args)
     log_time_range(tz, since_ts, until_ts)
 
-    my_id, other_id = detect_sender_ids(Path(args.db), args.table)
-    if args.my_id is not None:
-        my_id = args.my_id
-    if args.other_id is not None:
-        other_id = args.other_id
+    db_paths = [Path(p) for p in args.db]
+
+    if args.my_id is not None and args.other_id is not None:
+        my_id, other_id = args.my_id, args.other_id
+    else:
+        my_id, other_id = detect_sender_ids_multi(db_paths, args.table)
+        if args.my_id is not None:
+            my_id = args.my_id
+        if args.other_id is not None:
+            other_id = args.other_id
     print(f"--my-id={my_id}  --other-id={other_id}", file=sys.stderr)
 
     # 消息表名去掉 'Msg_' 前缀即为对方 wxid 的 MD5，用于引用消息发送方判断
     other_table_hash = args.table[4:] if args.table.startswith("Msg_") else ""
 
-    messages = fetch_messages(Path(args.db), args.table, since_ts, until_ts)
-    print(f"共 {len(messages)} 条消息（含所有类型）", file=sys.stderr)
+    messages = fetch_messages_multi(db_paths, args.table, since_ts, until_ts)
+    print(f"合计 {len(messages)} 条消息（含所有类型）", file=sys.stderr)
 
     if not messages:
         print("该时间段内无消息。", file=sys.stderr)

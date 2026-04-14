@@ -1,24 +1,64 @@
 ---
 name: common
-description: 微信聊天记录导出工具的公共知识库。包含数据库结构、消息类型枚举、Step 0 解密更新、公共脚本参数说明。export-private 和 export-chatroom 均依赖本文件，执行那两个 skill 前必须先读取本文件。
+description: 微信聊天记录导出工具的公共知识库。包含数据库结构、消息类型说明、Step 0 解密更新和公共脚本参数说明。export-private、export-chatroom、export-contacts 均依赖本文件，执行那些 skill 前必须先读取本文件。
 ---
 
 # 微信导出工具 — 公共知识库
 
 适用环境：Windows，微信 PC 版 4.x，依赖 `ylytdeng/wechat-decrypt` 完成解密前置步骤。
 
-## 前置条件
+---
 
-参见 `ylytdeng/wechat-decrypt` 完成解密。解密输出位于 `wechat-decrypt/decrypted/`，结构：
+## 数据库结构
+
+解密后文件位于 `~/Repo/wechat-decrypt/decrypted/`：
+
+- `contact/contact.db`：联系人表，字段 `username`（wxid）/ `nick_name` / `remark` / `alias`
+- `message/message_N.db`：消息库（N 从 0 开始，0 为最新，编号越大越早）；每个联系人一张表，表名 = `Msg_` + MD5(wxid)
+
+消息表有效字段：`local_id` / `local_type` / `real_sender_id` / `create_time`（Unix 秒）/ `message_content`
+
+## 消息类型 → 导出输出
+
+| local_type | 类型 | 导出输出 |
+|---|---|---|
+| 1 | 文字 | 原文 |
+| 3 | 图片 | `[图片]` |
+| 34 | 语音 | `[语音]` |
+| 42 | 名片 | `[名片]` |
+| 43 | 视频 | `[视频]` |
+| 47 | 微信表情 | `[表情]` |
+| 48 | 位置 | `[位置]` |
+| 50 | 通话 | `[通话]` |
+| 10000 | 系统通知 | `[撤回了一条消息]` 等 |
+| `N × 2³² + 49` | appmsg（链接/引用等）| `[分享] title url` / `「引用 sender：内容」正文` |
+
+## 双人 vs 群聊关键差异
+
+**双人会话**：`real_sender_id` 可靠。脚本自动推断发送方（较小 ID 为自己）；推断失败时用 `--my-id` / `--other-id`。
+
+**群聊**：`real_sender_id` 不可靠，真实 wxid 嵌在文字消息内容前缀 `wxid_xxx:\n`；非文字消息发送方标注 `【?】`。
+
+## 输出格式
+
+**双人会话**（发送方固定为 `用户` / `对方`）：
 
 ```
-decrypted/
-├── contact/
-│   └── contact.db
-└── message/
-    ├── message_0.db   # 最新
-    ├── message_1.db
-    └── ...            # 编号不设上限，越大越早
+-----------------------
+[yy-MM-dd HH:mm]
+-----------------------
+【用户】：消息内容 ⏎
+【对方】：消息内容 ⏎
+```
+
+**群聊**（发送方用 `【】` 包裹，`【?】` 表示非文字消息）：
+
+```
+-----------------------
+[yy-MM-dd HH:mm]
+-----------------------
+【昵称】：消息内容 ⏎
+【?】：消息内容 ⏎
 ```
 
 ---
@@ -49,78 +89,13 @@ for db in sorted(glob.glob(pattern)):
 
 ---
 
-## 数据库结构
-
-### contact/contact.db — 联系人
-
-**contact 表**有效字段：
-
-| 字段 | 说明 |
-|------|------|
-| `username` | wxid，用于计算消息表名 |
-| `nick_name` | 微信昵称 |
-| `remark` | 备注名 |
-| `alias` | 用户自设微信号 |
-
-### message/message_N.db — 消息（编号不设上限，message_0 最新）
-
-**Msg_{MD5} 表**：每个联系人一张，表名 = `Msg_` + MD5(wxid)。
-
-有效字段：
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `local_id` | INTEGER PK | 本地自增 id |
-| `local_type` | INTEGER | 消息类型 |
-| `real_sender_id` | INTEGER | 发送方 ID（双人会话可靠，群聊不可靠） |
-| `create_time` | INTEGER | Unix 时间戳（秒） |
-| `message_content` | TEXT/BLOB | 正文；仅 type 1/10000 为明文 |
-
-忽略字段：`upload_status`（全 0）、`compress_content`（全空）、`sort_seq`（≈ create_time×1000）、`WCDB_CT_*`、`source`、`server_id`、`server_seq`。
-
----
-
-## local_type 完整枚举
-
-| local_type | 类型 | 导出输出 |
-|---|---|---|
-| 1 | 文字 | 原文 |
-| 3 | 图片 | `[图片]` |
-| 34 | 语音 | `[语音]` |
-| 42 | 名片 | `[名片]` |
-| 43 | 视频 | `[视频]` |
-| 47 | 微信表情 | `[表情]` |
-| 48 | 位置 | `[位置]` |
-| 50 | 通话 | `[通话]` |
-| 10000 | 系统通知（撤回等）| `[撤回了一条消息]` 等 |
-| `N × 2³² + 49` | appmsg 扩展类型 | 自动解码，见下 |
-
-### appmsg 扩展类型（`local_type % 2³² == 49`）
-
-所有此类消息均为 **zstd 压缩的 appmsg XML**，内部 `<appmsg><type>N</type>` 决定实际类型：
-
-| appmsg inner type | 类型 | 导出输出 |
-|---|---|---|
-| 4 | 外链/视频分享（B站等） | `[分享] {title} {url}` |
-| 5 | 小程序/图文分享（小红书等）| `[分享] {title} {url}` |
-| 57 | 引用回复 | `[引用] [{发送方}：{被引用内容}] {回复正文}` |
-| 其他 | 卡片/小程序等 | `[分享] {title}`（无 URL 时） |
-
-编码规律：`local_type = appmsg_inner_type × 2³² + 49`。zstd 魔数：`\x28\xb5\x2f\xfd`（前4字节）。需安装 `zstandard`（`pip install zstandard`）。
-
-### type=10000 系统消息
-
-部分为完整 zstd 压缩数据，部分在 zstd 帧头后**直接拼接明文 XML**（非完整压缩帧）。常见内容：`<sysmsg type="revokemsg">` → `[你撤回了一条消息]` / `[对方撤回了一条消息]`。
-
----
-
 ## 公共脚本参数
 
-两个导出脚本共享以下参数：
+两个导出脚本（export_private.py / export_chatroom.py）共享以下参数：
 
 | 参数 | 必填 | 说明 |
 |------|:----:|------|
-| `--db` | ✅ | message_0.db 路径 |
+| `--db` | ✅ | message_N.db 路径 |
 | `--table` | ✅ | 消息表名，如 `Msg_xxxx` |
 | `--days` | | 最近 N 天；与 `--since` 互斥 |
 | `--since` | | 起始日期 YYYY-MM-DD |
@@ -129,17 +104,3 @@ for db in sorted(glob.glob(pattern)):
 | `--tz` | | 时区偏移小时数，默认 8 |
 
 进度信息输出到 stderr，正文输出到 stdout，重定向互不干扰。
-
----
-
-## 输出格式（通用结构）
-
-```
------------------------
-[yy-MM-dd HH:mm]
------------------------
-【发送方】：消息内容 ⏎
-【发送方】：消息内容 ⏎
-```
-
-相邻消息时间间隔超过阈值（默认 1 小时）则插入新时间段分隔线。时间戳为 GMT+8（可通过 `--tz` 调整）。

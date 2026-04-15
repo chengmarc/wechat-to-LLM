@@ -22,7 +22,7 @@
     --threshold 秒数            同一时段阈值，默认 3600
     --tz 小时数                 时区偏移，默认 8（GMT+8）
 
-进度信息输出到 stderr，正文输出到 stdout，重定向互不干扰。
+stdout + stderr 均重定向到输出文件（> out.txt 2>&1），禁止进入上下文。
 """
 
 import argparse
@@ -155,7 +155,7 @@ def make_format_fn(sender_map: dict[str, str], name2id_map: dict[int, str]):
             return sender, content
 
         # 其他类型：用 decode_content 解码内容；real_sender_id 经 Name2Id rowid 反查 wxid
-        content = decode_content(local_type, msg["content"])
+        content = decode_content(local_type, msg["content"], sender_map=sender_map)
         if content is None:
             return None
 

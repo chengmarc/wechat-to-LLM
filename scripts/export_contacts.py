@@ -20,10 +20,11 @@
 
 import argparse
 import hashlib
-import re
 import sqlite3
 import sys
 from pathlib import Path
+
+from common import db_number
 
 
 def get_contacts(contact_db_path: Path) -> list[dict]:
@@ -49,12 +50,6 @@ def get_table_counts(db_path: Path) -> dict[str, int]:
     return counts
 
 
-def db_number(db_path: Path) -> str:
-    """从文件名提取库编号，如 message_2.db → '2'；提取失败则返回文件名。"""
-    m = re.search(r"message_(\d+)", db_path.name)
-    return m.group(1) if m else db_path.name
-
-
 def merge_table_counts(db_paths: list[Path]) -> tuple[dict[str, int], dict[str, list[str]]]:
     """
     合并多个消息库的行计数。
@@ -67,7 +62,7 @@ def merge_table_counts(db_paths: list[Path]) -> tuple[dict[str, int], dict[str, 
     table_dbs: dict[str, list[str]] = {}
     for db_path in db_paths:
         print(f"扫描 {db_path.name} ...", file=sys.stderr)
-        num = db_number(db_path)
+        num = str(db_number(db_path))
         for table, count in get_table_counts(db_path).items():
             merged_counts[table] = merged_counts.get(table, 0) + count
             table_dbs.setdefault(table, []).append(num)

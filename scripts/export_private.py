@@ -28,7 +28,7 @@
     --threshold 秒数            同一时段阈值，默认 3600
     --tz 小时数                 时区偏移，默认 8（GMT+8）
 
-进度信息输出到 stderr，正文输出到 stdout，重定向互不干扰。
+stdout + stderr 均重定向到输出文件（> out.txt 2>&1），禁止进入上下文。
 """
 
 import argparse
@@ -41,70 +41,13 @@ from common import (
     add_time_args, resolve_time_range, log_time_range,
     fetch_messages_multi,
     compress, decode_content,
+    infer_sender_map,
 )
-
-
-def _table_exists(conn, table: str) -> bool:
-    cur = conn.cursor()
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
-    return cur.fetchone() is not None
 
 
 # ---------------------------------------------------------------------------
 # sender_map.json 读写
 # ---------------------------------------------------------------------------
-
-def _sample_messages(conn, table: str, sender_id: int, n: int = 5) -> list[str]:
-    """从指定 sender_id 采样最多 n 条 type=1 消息内容（取时间最早的）。"""
-    cur = conn.cursor()
-    cur.execute(
-        f"SELECT message_content FROM {table} "
-        f"WHERE local_type = 1 AND real_sender_id = ? "
-        f"ORDER BY create_time ASC LIMIT ?",
-        (sender_id, n),
-    )
-    samples = []
-    for (raw,) in cur.fetchall():
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", errors="replace")
-        if raw:
-            # 群聊前缀 wxid:\n 截断；私聊无此前缀，不影响
-            text = raw.split(":\n", 1)[-1].strip()
-            if text:
-                samples.append(text)
-    return samples
-
-
-def infer_sender_map(db_paths: list[Path], table: str) -> list[dict]:
-    """
-    按库分别扫描 type=1 消息的 distinct real_sender_id，推断 my_id / other_id。
-    规律（启发式）：两个 ID 中较小的为 my_id，较大的为 other_id。
-    同时为每个 sender_id 采样几条消息写入 _samples，供人工核对。
-    仅在恰好找到 2 个 ID 时才为该库生成条目；其他情况跳过并输出警告。
-    """
-    entries = []
-    for db_path in db_paths:
-        conn = sqlite3.connect(db_path)
-        if not _table_exists(conn, table):
-            conn.close()
-            continue
-        cur = conn.cursor()
-        cur.execute(f"SELECT DISTINCT real_sender_id FROM {table} WHERE local_type = 1")
-        ids = sorted(r[0] for r in cur.fetchall())
-        if len(ids) == 2:
-            samples = {str(sid): _sample_messages(conn, table, sid) for sid in ids}
-            entries.append({
-                "db": db_path.name,
-                "my_id": ids[0],
-                "other_id": ids[1],
-                "_samples": samples,
-            })
-        elif len(ids) == 1:
-            print(f"警告：{db_path.name} 只有 1 个 sender_id ({ids[0]})，无法推断，已跳过", file=sys.stderr)
-        else:
-            print(f"警告：{db_path.name} 找到 {len(ids)} 个 sender_id {ids}，无法推断，已跳过", file=sys.stderr)
-        conn.close()
-    return entries
 
 
 def load_sender_map(sender_map_path: Path) -> dict[str, dict[int, str]]:

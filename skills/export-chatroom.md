@@ -10,10 +10,8 @@ description: 从已解密的微信数据库中提取群聊记录，输出为 LLM
 ## 群聊特有说明
 
 - `real_sender_id` 不可靠。真实发送者 wxid 嵌在 `message_content` 前缀中：`wxid_xxx:\n正文内容`。
-- 非文字消息（图片、引用等）无 wxid 前缀，发送方标注为 `【?】`。
+- 非文字消息（图片、引用等）无 wxid 前缀，发送方通过 `Name2Id` 表反查；仅无法反查时（如已离群成员）标注为 `【?】`。
 - 群 username 格式：`数字@chatroom`（如 `12345678@chatroom`）。
-
----
 
 ## 操作流程
 
@@ -21,94 +19,25 @@ description: 从已解密的微信数据库中提取群聊记录，输出为 LLM
 
 参见 `common.md`。
 
-### Step 1：定位群聊表名
+### Step 1：查找群聊
 
 ```bash
 cd ~/Repo/wechat-to-LLM
-
-# 1a. 在 contact.db 中查找群聊
-sqlite3 wechat-decrypt/decrypted/contact/contact.db \
-  "SELECT username, nick_name, remark FROM contact
-   WHERE username LIKE '%@chatroom%'
-     AND (nick_name LIKE '%关键词%' OR remark LIKE '%关键词%');"
-
-# 1b. 计算消息表名
-python -c "import hashlib; print('Msg_' + hashlib.md5('12345678@chatroom'.encode()).hexdigest())"
+python scripts/find_chatroom.py <关键词>
 ```
 
-### Step 2：构建 id_map（新群或有新成员时更新）
+输出：wxid、消息表名、各库消息量及日期范围、以及一条即用的 `export_chatroom.py` 命令（默认最近1天）。
 
-**推荐：用 `--contact-db` 自动生成**（在 Step 3 导出时一并完成，无需单独执行）
+### Step 2：运行导出命令
 
-如需手动生成或检查 id_map，参见下方备选流程。
+> **必须重定向到文件，禁止裸跑。** stdout 和 stderr 均不得进入上下文窗口。
 
-> **手动备选**：
->
-> ```bash
-> cd ~/Repo/wechat-to-LLM
->
-> # 提取消息表中出现的 wxid
-> sqlite3 wechat-decrypt/decrypted/message/message_0.db \
->   "SELECT DISTINCT substr(message_content, 1, instr(message_content, char(58,10)) - 1)
->    FROM Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
->    WHERE local_type = 1 AND instr(message_content, char(58,10)) > 0 ORDER BY 1;"
->
-> # 查询昵称并保存
-> sqlite3 -json wechat-decrypt/decrypted/contact/contact.db \
->   "SELECT username, nick_name, remark FROM contact
->    WHERE username IN ('wxid_aaa', 'wxid_bbb', ...);" \
->   > output/id_map_{名称}.json
-> ```
+在 Step 1 输出的命令末尾加 `> output/<群名>.txt 2>&1` 后运行。`--contact-db` 参数存在时自动生成/更新 `id_map.json`（后续导出可省略此参数）。
 
-### Step 3：导出
+时间范围参数（替换默认的 `--days 1`）：
 
-输出文件固定放在 `output/`，命名为 `chat_{名称}.txt`。
-
-加 `--contact-db` 时自动生成/更新 id_map.json，省去 Step 2：
-
-```bash
-cd ~/Repo/wechat-to-LLM
-
-# 最近 1 天（默认），自动生成 id_map
-python scripts/export_chatroom.py \
-  --db wechat-decrypt/decrypted/message/message_0.db \
-  --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  --contact-db wechat-decrypt/decrypted/contact/contact.db \
-  --id-map output/id_map_{名称}.json \
-  > output/chat_{名称}.txt
-
-# id_map 已存在时可省略 --contact-db
-python scripts/export_chatroom.py \
-  --db wechat-decrypt/decrypted/message/message_0.db \
-  --table Msg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  --id-map output/id_map_{名称}.json \
-  --days 7 > output/chat_{名称}.txt
-
-# 指定日期范围
-python scripts/export_chatroom.py --db ... --table ... --id-map output/id_map_{名称}.json \
-  --since 2026-03-01 --until 2026-04-01 > output/chat_{名称}.txt
-```
-
-**群聊专有参数**：
-
-| 参数 | 必填 | 说明 |
-|------|:----:|------|
-| `--id-map` | ✅ | id_map.json 路径（自动生成时为输出路径） |
-| `--contact-db` | | contact.db 路径；提供时自动生成 id_map.json |
-| `--days` | | 最近 N 天，**默认 1**（群聊消息量大，不建议全量） |
-
-公共参数（`--db`、`--table`、`--since`、`--until`、`--threshold`、`--tz`）参见 `common.md`。
-
----
-
-## 输出格式
-
-```
------------------------
-[yy-MM-dd HH:mm]
------------------------
-【昵称】：消息内容 ⏎
-【昵称】：消息内容 ⏎
-```
-
-发送方标签：`【昵称】`（在 id_map 中）或 `【原始 wxid】`（不在 id_map 中）；非文字消息 → `【?】`。
+| 参数 | 说明 |
+|------|------|
+| `--days N` | 最近 N 天 |
+| `--since YYYY-MM-DD` | 从某日起 |
+| `--since YYYY-MM-DD --until YYYY-MM-DD` | 指定区间 |
